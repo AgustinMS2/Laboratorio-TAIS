@@ -1,0 +1,711 @@
+openapi: 3.0.3
+
+info:
+  title: API Local de Venta de Artículos
+  description: |
+    APIs REST para la gestión de **Productos** y **Órdenes de compra** de un local
+    que vende de forma presencial y también recibe pedidos por la Web.
+
+    La solución sigue un estilo arquitectónico de microservicios: los recursos
+    `/api/productos` y `/api/ordenes` son atendidos por servicios independientes,
+    expuestos aquí bajo una única especificación.
+  version: 1.0.0
+  contact:
+    name: Equipo de desarrollo - Taller IISS (UTEC - ITR Este)
+
+servers:
+  - url: http://localhost:8080
+    description: Entorno local (Docker Compose - API Gateway / reverse proxy)
+  - url: http://localhost:5001
+    description: Microservicio de Productos
+  - url: http://localhost:5002
+    description: Microservicio de Órdenes
+
+tags:
+  - name: Productos
+    description: Alta, consulta y modificación del catálogo de productos
+  - name: Ordenes
+    description: Registro y consulta de órdenes de compra
+
+paths:
+
+  /api/productos:
+    get:
+      tags: [Productos]
+      summary: Lista todos los productos
+      operationId: listarProductos
+      responses:
+        '200':
+          description: Lista de productos con todos sus datos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Producto'
+              example:
+                - id: 1
+                  nombre: Notebook Lenovo ThinkPad
+                  descripcion: Notebook Intel i7 16GB RAM
+                  precioUnitario: 1250.50
+                  stock: 15
+                  imagenes:
+                    - https://cdn.local/img/thinkpad-1.jpg
+                    - https://cdn.local/img/thinkpad-2.jpg
+                - id: 2
+                  nombre: Mouse Logitech MX Master 3
+                  descripcion: Mouse inalámbrico ergonómico
+                  precioUnitario: 99.90
+                  stock: 40
+                  imagenes:
+                    - https://cdn.local/img/mx-master-1.jpg
+
+    post:
+      tags: [Productos]
+      summary: Crea un nuevo producto
+      operationId: crearProducto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoCreate'
+            example:
+              nombre: Notebook Lenovo ThinkPad
+              descripcion: Notebook Intel i7 16GB RAM
+              precioUnitario: 1250.50
+              stock: 15
+              imagenes:
+                - https://cdn.local/img/thinkpad-1.jpg
+                - https://cdn.local/img/thinkpad-2.jpg
+      responses:
+        '201':
+          description: Producto creado exitosamente
+          headers:
+            Location:
+              description: URI del producto creado
+              schema:
+                type: string
+                format: uri
+              example: /api/productos/1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductoCreado'
+              example:
+                id: 1
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+
+  /api/productos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ProductoId'
+
+    get:
+      tags: [Productos]
+      summary: Obtiene un producto por su identificador
+      operationId: obtenerProducto
+      responses:
+        '200':
+          description: Datos del producto solicitado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+              example:
+                id: 1
+                nombre: Notebook Lenovo ThinkPad
+                descripcion: Notebook Intel i7 16GB RAM
+                precioUnitario: 1250.50
+                stock: 15
+                imagenes:
+                  - https://cdn.local/img/thinkpad-1.jpg
+        '404':
+          $ref: '#/components/responses/ProductoNoEncontrado'
+
+    put:
+      tags: [Productos]
+      summary: Reemplaza todos los datos de un producto existente
+      description: |
+        Actualización total del recurso: se deben enviar **todos** los campos del
+        producto. Los campos ausentes se interpretan como una modificación del
+        recurso completo, no como campos sin cambios.
+      operationId: reemplazarProducto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoCreate'
+            example:
+              nombre: Notebook Lenovo ThinkPad X1
+              descripcion: Notebook Intel i7 32GB RAM
+              precioUnitario: 1490.00
+              stock: 12
+              imagenes:
+                - https://cdn.local/img/thinkpad-x1.jpg
+      responses:
+        '200':
+          $ref: '#/components/responses/MensajeOk'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/ProductoNoEncontrado'
+
+    patch:
+      tags: [Productos]
+      summary: Actualiza parcialmente un producto existente
+      description: |
+        Actualización parcial: sólo se modifican los campos presentes en el cuerpo
+        de la solicitud. Se debe enviar al menos un campo.
+      operationId: actualizarParcialProducto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoPatch'
+            example:
+              precioUnitario: 1199.99
+              stock: 20
+      responses:
+        '200':
+          $ref: '#/components/responses/MensajeOk'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/ProductoNoEncontrado'
+
+  /api/ordenes:
+    get:
+      tags: [Ordenes]
+      summary: Lista todas las órdenes de compra
+      description: |
+        Devuelve los datos de cada orden junto con la lista de productos
+        solicitados (identificador y cantidad).
+      operationId: listarOrdenes
+      responses:
+        '200':
+          description: Lista de órdenes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Orden'
+              example:
+                - id: 1001
+                  email: cliente@email.com
+                  direccionEnvio: Av. Italia 3333, Maldonado
+                  telefono: '+59899111222'
+                  estado: Created
+                  fechaCreacion: '2026-06-21T14:30:00-03:00'
+                  productos:
+                    - productoId: 1
+                      cantidad: 2
+                    - productoId: 2
+                      cantidad: 5
+
+    post:
+      tags: [Ordenes]
+      summary: Registra una nueva orden de compra
+      description: |
+        Crea la orden en estado `Created` y descuenta el stock de cada producto
+        solicitado. Si algún producto no existe o el stock es insuficiente, la
+        orden no se crea y se responde con `409 Conflict`.
+      operationId: crearOrden
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdenCreate'
+            example:
+              email: cliente@email.com
+              direccionEnvio: Av. Italia 3333, Maldonado
+              telefono: '+59899111222'
+              productos:
+                - productoId: 1
+                  cantidad: 2
+                - productoId: 2
+                  cantidad: 5
+      responses:
+        '201':
+          description: Orden creada exitosamente
+          headers:
+            Location:
+              description: URI de la orden creada
+              schema:
+                type: string
+                format: uri
+              example: /api/ordenes/1001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdenCreada'
+              example:
+                id: 1001
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '409':
+          description: |
+            Conflicto: alguno de los productos solicitados no existe o no tiene
+            stock suficiente para la cantidad pedida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                stockInsuficiente:
+                  summary: Stock insuficiente
+                  value:
+                    codigo: 409
+                    mensaje: Stock insuficiente para uno o más productos solicitados
+                    detalles:
+                      - 'Producto 1: stock disponible 3, cantidad solicitada 5'
+                productoInexistente:
+                  summary: Producto inexistente
+                  value:
+                    codigo: 409
+                    mensaje: Uno o más productos solicitados no existen
+                    detalles:
+                      - 'No existe el producto con id 99'
+
+  /api/ordenes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrdenId'
+    get:
+      tags: [Ordenes]
+      summary: Obtiene una orden por su identificador
+      operationId: obtenerOrden
+      responses:
+        '200':
+          description: Datos de la orden solicitada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+              example:
+                id: 1001
+                email: cliente@email.com
+                direccionEnvio: Av. Italia 3333, Maldonado
+                telefono: '+59899111222'
+                estado: Created
+                fechaCreacion: '2026-06-21T14:30:00-03:00'
+                productos:
+                  - productoId: 1
+                    cantidad: 2
+                  - productoId: 2
+                    cantidad: 5
+        '404':
+          $ref: '#/components/responses/OrdenNoEncontrada'
+
+  /api/ordenes/{id}/detalle:
+    parameters:
+      - $ref: '#/components/parameters/OrdenId'
+    get:
+      tags: [Ordenes]
+      summary: Obtiene una orden con el detalle completo de sus productos
+      description: |
+        Devuelve los datos de la orden y, por cada producto solicitado, todos los
+        datos del producto además de la cantidad pedida.
+      operationId: obtenerDetalleOrden
+      responses:
+        '200':
+          description: Orden con el detalle completo de cada producto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdenDetalle'
+              example:
+                id: 1001
+                email: cliente@email.com
+                direccionEnvio: Av. Italia 3333, Maldonado
+                telefono: '+59899111222'
+                estado: Created
+                fechaCreacion: '2026-06-21T14:30:00-03:00'
+                total: 3000.50
+                productos:
+                  - cantidad: 2
+                    subtotal: 2501.00
+                    producto:
+                      id: 1
+                      nombre: Notebook Lenovo ThinkPad
+                      descripcion: Notebook Intel i7 16GB RAM
+                      precioUnitario: 1250.50
+                      stock: 13
+                      imagenes:
+                        - https://cdn.local/img/thinkpad-1.jpg
+                  - cantidad: 5
+                    subtotal: 499.50
+                    producto:
+                      id: 2
+                      nombre: Mouse Logitech MX Master 3
+                      descripcion: Mouse inalámbrico ergonómico
+                      precioUnitario: 99.90
+                      stock: 35
+                      imagenes:
+                        - https://cdn.local/img/mx-master-1.jpg
+        '404':
+          $ref: '#/components/responses/OrdenNoEncontrada'
+
+components:
+
+  parameters:
+    ProductoId:
+      name: id
+      in: path
+      required: true
+      description: Identificador único del producto
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      example: 1
+
+    OrdenId:
+      name: id
+      in: path
+      required: true
+      description: Identificador único de la orden
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      example: 1001
+
+  responses:
+    MensajeOk:
+      description: Operación realizada correctamente
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Mensaje'
+          example:
+            mensaje: Producto actualizado correctamente
+
+    SolicitudInvalida:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            codigo: 400
+            mensaje: Datos de entrada inválidos
+            detalles:
+              - 'El campo nombre es obligatorio'
+              - 'El campo precioUnitario debe ser mayor que 0'
+
+    ProductoNoEncontrado:
+      description: No existe un producto con el identificador indicado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            codigo: 404
+            mensaje: No existe el producto con id 99
+
+    OrdenNoEncontrada:
+      description: No existe una orden con el identificador indicado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            codigo: 404
+            mensaje: No existe la orden con id 9999
+
+  schemas:
+
+    Producto:
+      type: object
+      description: Producto del catálogo
+      required: [id, nombre, precioUnitario, stock]
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+          description: Identificador único generado por el sistema
+          example: 1
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Notebook Lenovo ThinkPad
+        descripcion:
+          type: string
+          maxLength: 500
+          example: Notebook Intel i7 16GB RAM
+        precioUnitario:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+          example: 1250.50
+        stock:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Unidades disponibles
+          example: 15
+        imagenes:
+          type: array
+          description: Lista de links a imágenes del producto
+          items:
+            type: string
+            format: uri
+            maxLength: 500
+          example:
+            - https://cdn.local/img/thinkpad-1.jpg
+            - https://cdn.local/img/thinkpad-2.jpg
+
+    ProductoCreate:
+      type: object
+      description: Datos necesarios para crear o reemplazar un producto
+      required: [nombre, precioUnitario, stock]
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 100
+        descripcion:
+          type: string
+          maxLength: 500
+        precioUnitario:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+        stock:
+          type: integer
+          format: int32
+          minimum: 0
+        imagenes:
+          type: array
+          items:
+            type: string
+            format: uri
+            maxLength: 500
+
+    ProductoPatch:
+      type: object
+      description: |
+        Campos a modificar de un producto. Todos son opcionales, pero debe
+        enviarse al menos uno.
+      minProperties: 1
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 100
+        descripcion:
+          type: string
+          maxLength: 500
+        precioUnitario:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+        stock:
+          type: integer
+          format: int32
+          minimum: 0
+        imagenes:
+          type: array
+          items:
+            type: string
+            format: uri
+            maxLength: 500
+
+    ProductoCreado:
+      type: object
+      description: Identificador del producto generado
+      required: [id]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+
+    LineaOrden:
+      type: object
+      description: Producto solicitado en una orden y su cantidad
+      required: [productoId, cantidad]
+      properties:
+        productoId:
+          type: integer
+          format: int64
+          example: 1
+        cantidad:
+          type: integer
+          format: int32
+          minimum: 1
+          example: 2
+
+    EstadoOrden:
+      type: string
+      description: Estado del pedido
+      enum:
+        - Created
+        - Confirmed
+        - Shipped
+        - Delivered
+        - Cancelled
+      example: Created
+
+    Orden:
+      type: object
+      description: Orden de compra con los identificadores de los productos pedidos
+      required: [id, email, direccionEnvio, telefono, estado, fechaCreacion, productos]
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+          example: 1001
+        email:
+          type: string
+          format: email
+          maxLength: 150
+          example: cliente@email.com
+        direccionEnvio:
+          type: string
+          minLength: 1
+          maxLength: 250
+          example: Av. Italia 3333, Maldonado
+        telefono:
+          type: string
+          pattern: '^\+?[0-9\s\-]{7,20}$'
+          example: '+59899111222'
+        estado:
+          $ref: '#/components/schemas/EstadoOrden'
+        fechaCreacion:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Fecha y hora de solicitud del pedido (ISO 8601)
+          example: '2026-06-21T14:30:00-03:00'
+        productos:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LineaOrden'
+
+    OrdenCreate:
+      type: object
+      description: |
+        Datos necesarios para registrar una orden. El `id`, el `estado` y la
+        `fechaCreacion` son asignados por el servidor.
+      required: [email, direccionEnvio, telefono, productos]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 150
+        direccionEnvio:
+          type: string
+          minLength: 1
+          maxLength: 250
+        telefono:
+          type: string
+          pattern: '^\+?[0-9\s\-]{7,20}$'
+        productos:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LineaOrden'
+
+    OrdenCreada:
+      type: object
+      description: Identificador de la orden generada
+      required: [id]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1001
+
+    LineaOrdenDetalle:
+      type: object
+      description: Línea de la orden con todos los datos del producto solicitado
+      required: [cantidad, producto]
+      properties:
+        cantidad:
+          type: integer
+          format: int32
+          minimum: 1
+          example: 2
+        subtotal:
+          type: number
+          format: double
+          description: precioUnitario x cantidad
+          example: 2501.00
+        producto:
+          $ref: '#/components/schemas/Producto'
+
+    OrdenDetalle:
+      type: object
+      description: Orden de compra con el detalle completo de cada producto pedido
+      required: [id, email, direccionEnvio, telefono, estado, fechaCreacion, productos]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1001
+        email:
+          type: string
+          format: email
+          example: cliente@email.com
+        direccionEnvio:
+          type: string
+          example: Av. Italia 3333, Maldonado
+        telefono:
+          type: string
+          example: '+59899111222'
+        estado:
+          $ref: '#/components/schemas/EstadoOrden'
+        fechaCreacion:
+          type: string
+          format: date-time
+          example: '2026-06-21T14:30:00-03:00'
+        total:
+          type: number
+          format: double
+          description: Suma de los subtotales de todas las líneas
+          example: 3000.50
+        productos:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineaOrdenDetalle'
+
+    Mensaje:
+      type: object
+      description: Mensaje informativo de una operación exitosa
+      required: [mensaje]
+      properties:
+        mensaje:
+          type: string
+          example: Producto actualizado correctamente
+
+    Error:
+      type: object
+      description: Mensaje de error
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: integer
+          format: int32
+          description: Código de estado HTTP
+          example: 404
+        mensaje:
+          type: string
+          description: Descripción del error
+          example: No existe el producto con id 99
+        detalles:
+          type: array
+          description: Detalle de los errores de validación, si corresponde
+          items:
+            type: string
