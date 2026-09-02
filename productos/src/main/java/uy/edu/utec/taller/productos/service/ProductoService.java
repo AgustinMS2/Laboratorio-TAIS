@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uy.edu.utec.taller.productos.dto.ProductoDTO;
+import uy.edu.utec.taller.productos.exception.ProductoNoEncontradoException;
 import uy.edu.utec.taller.productos.repository.ProductoRepository;
 
 @Service
@@ -19,5 +20,12 @@ public class ProductoService {
                 .stream()
                 .map(ProductoDTO::fromEntity)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ProductoDTO obtenerProducto(Long id) {
+        return productoRepository.findById(id)
+                .map(ProductoDTO::fromEntity)
+                .orElseThrow(() -> new ProductoNoEncontradoException(id));
     }
 }

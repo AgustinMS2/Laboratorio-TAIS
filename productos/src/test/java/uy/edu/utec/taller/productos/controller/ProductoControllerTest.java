@@ -41,4 +41,30 @@ class ProductoControllerTest {
                 .andExpect(jsonPath("$[1].stock", is(40)))
                 .andExpect(jsonPath("$[1].imagenes", hasSize(1)));
     }
+
+    @Test
+    @DisplayName("GET /api/productos/{id} debe retornar 200 OK y el producto cuando existe")
+    void testObtenerProductoExistente() throws Exception {
+        mockMvc.perform(get("/api/productos/1")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id", is(1)))
+                .andExpect(jsonPath("$.nombre", is("Notebook Lenovo ThinkPad")))
+                .andExpect(jsonPath("$.descripcion", is("Notebook Intel i7 16GB RAM")))
+                .andExpect(jsonPath("$.precioUnitario", is(1250.50)))
+                .andExpect(jsonPath("$.stock", is(15)))
+                .andExpect(jsonPath("$.imagenes", hasSize(2)));
+    }
+
+    @Test
+    @DisplayName("GET /api/productos/{id} debe retornar 404 Not Found y mensaje de error cuando no existe")
+    void testObtenerProductoInexistente() throws Exception {
+        mockMvc.perform(get("/api/productos/9999")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.codigo", is(404)))
+                .andExpect(jsonPath("$.mensaje", is("No existe el producto con id 9999")));
+    }
 }
