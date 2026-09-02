@@ -1,16 +1,25 @@
 package uy.edu.utec.taller.ordenes.service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uy.edu.utec.taller.ordenes.client.ProductoClient;
 import uy.edu.utec.taller.ordenes.client.dto.ProductoResponse;
+import uy.edu.utec.taller.ordenes.dto.LineaOrdenCreateDTO;
 import uy.edu.utec.taller.ordenes.dto.LineaOrdenDetalleDTO;
+import uy.edu.utec.taller.ordenes.dto.OrdenCreadaDTO;
+import uy.edu.utec.taller.ordenes.dto.OrdenCreateDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDetalleDTO;
 import uy.edu.utec.taller.ordenes.exception.OrdenNoEncontradaException;
+import uy.edu.utec.taller.ordenes.exception.ProductosInexistentesException;
+import uy.edu.utec.taller.ordenes.exception.StockInsuficienteException;
+import uy.edu.utec.taller.ordenes.model.EstadoOrden;
 import uy.edu.utec.taller.ordenes.model.LineaOrden;
 import uy.edu.utec.taller.ordenes.model.Orden;
 import uy.edu.utec.taller.ordenes.repository.OrdenRepository;
@@ -75,5 +84,70 @@ public class OrdenService {
 
     private static double redondear(double valor) {
         return Math.round(valor * 100.0) / 100.0;
+    }
+
+    /**
+     * Registra una orden en estado {@code Created} y descuenta el stock de cada
+     * producto solicitado en el microservicio de Productos.
+     *
+     * @throws ProductosInexistentesException si algún producto solicitado no existe (409).
+     * @throws StockInsuficienteException si algún producto no tiene stock suficiente (409).
+     */
+    @Transactional
+    public OrdenCreadaDTO crearOrden(OrdenCreateDTO ordenCreate) {
+        // Cantidad total pedida por producto (agrega líneas repetidas del mismo producto).
+        Map<Long, Integer> cantidadPorProducto = new LinkedHashMap<>();
+        for (LineaOrdenCreateDTO linea : ordenCreate.getProductos()) {
+            cantidadPorProducto.merge(linea.getProductoId(), linea.getCantidad(), Integer::sum);
+        }
+
+        // 1. Traer cada producto del servicio de Productos y validar existencia y stock.
+        Map<Long, ProductoResponse> productos = new LinkedHashMap<>();
+        List<String> inexistentes = new ArrayList<>();
+        List<String> sinStock = new ArrayList<>();
+
+        cantidadPorProducto.forEach((productoId, cantidad) -> {
+            ProductoResponse producto = productoClient.obtenerProducto(productoId).orElse(null);
+            if (producto == null) {
+                inexistentes.add("No existe el producto con id " + productoId);
+                return;
+            }
+            productos.put(productoId, producto);
+            int disponible = producto.getStock() == null ? 0 : producto.getStock();
+            if (disponible < cantidad) {
+                sinStock.add("Producto " + productoId + ": stock disponible " + disponible
+                        + ", cantidad solicitada " + cantidad);
+            }
+        });
+
+        if (!inexistentes.isEmpty()) {
+            throw new ProductosInexistentesException(inexistentes);
+        }
+        if (!sinStock.isEmpty()) {
+            throw new StockInsuficienteException(sinStock);
+        }
+
+        // 2. Persistir la orden con sus líneas tal como fueron solicitadas.
+        Orden orden = Orden.builder()
+                .email(ordenCreate.getEmail())
+                .direccionEnvio(ordenCreate.getDireccionEnvio())
+                .telefono(ordenCreate.getTelefono())
+                .estado(EstadoOrden.Created)
+                .productos(ordenCreate.getProductos().stream()
+                        .map(linea -> LineaOrden.builder()
+                                .productoId(linea.getProductoId())
+                                .cantidad(linea.getCantidad())
+                                .build())
+                        .collect(Collectors.toCollection(ArrayList::new)))
+                .build();
+        Orden guardada = ordenRepository.save(orden);
+
+        // 3. Descontar el stock en el servicio de Productos.
+        cantidadPorProducto.forEach((productoId, cantidad) -> {
+            int nuevoStock = productos.get(productoId).getStock() - cantidad;
+            productoClient.actualizarStock(productoId, nuevoStock);
+        });
+
+        return OrdenCreadaDTO.builder().id(guardada.getId()).build();
     }
 }

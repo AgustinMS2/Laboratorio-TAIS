@@ -2,6 +2,11 @@ package uy.edu.utec.taller.ordenes.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
@@ -15,9 +20,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uy.edu.utec.taller.ordenes.client.ProductoClient;
 import uy.edu.utec.taller.ordenes.client.dto.ProductoResponse;
+import uy.edu.utec.taller.ordenes.dto.LineaOrdenCreateDTO;
+import uy.edu.utec.taller.ordenes.dto.OrdenCreadaDTO;
+import uy.edu.utec.taller.ordenes.dto.OrdenCreateDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDetalleDTO;
 import uy.edu.utec.taller.ordenes.exception.OrdenNoEncontradaException;
+import uy.edu.utec.taller.ordenes.exception.ProductosInexistentesException;
+import uy.edu.utec.taller.ordenes.exception.StockInsuficienteException;
 import uy.edu.utec.taller.ordenes.model.EstadoOrden;
 import uy.edu.utec.taller.ordenes.model.LineaOrden;
 import uy.edu.utec.taller.ordenes.model.Orden;
@@ -149,5 +159,65 @@ class OrdenServiceTest {
         assertThatThrownBy(() -> ordenService.obtenerDetalleOrden(9999L))
                 .isInstanceOf(OrdenNoEncontradaException.class)
                 .hasMessage("No existe la orden con id 9999");
+    }
+
+    private static OrdenCreateDTO nuevaOrden(LineaOrdenCreateDTO... lineas) {
+        return OrdenCreateDTO.builder()
+                .email("cliente@email.com")
+                .direccionEnvio("Av. Italia 3333, Maldonado")
+                .telefono("+59899111222")
+                .productos(List.of(lineas))
+                .build();
+    }
+
+    @Test
+    @DisplayName("crearOrden persiste la orden en estado Created y descuenta el stock de cada producto")
+    void testCrearOrden() {
+        when(productoClient.obtenerProducto(1L)).thenReturn(Optional.of(
+                ProductoResponse.builder().id(1L).precioUnitario(1250.50).stock(15).build()));
+        when(productoClient.obtenerProducto(2L)).thenReturn(Optional.of(
+                ProductoResponse.builder().id(2L).precioUnitario(99.90).stock(40).build()));
+        when(ordenRepository.save(any(Orden.class))).thenAnswer(inv -> {
+            Orden o = inv.getArgument(0);
+            o.setId(1001L);
+            return o;
+        });
+
+        OrdenCreadaDTO creada = ordenService.crearOrden(nuevaOrden(
+                LineaOrdenCreateDTO.builder().productoId(1L).cantidad(2).build(),
+                LineaOrdenCreateDTO.builder().productoId(2L).cantidad(5).build()));
+
+        assertThat(creada.getId()).isEqualTo(1001L);
+        verify(productoClient).actualizarStock(1L, 13);
+        verify(productoClient).actualizarStock(2L, 35);
+    }
+
+    @Test
+    @DisplayName("crearOrden lanza ProductosInexistentesException y no persiste si algún producto no existe")
+    void testCrearOrdenProductoInexistente() {
+        when(productoClient.obtenerProducto(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ordenService.crearOrden(nuevaOrden(
+                LineaOrdenCreateDTO.builder().productoId(99L).cantidad(1).build())))
+                .isInstanceOf(ProductosInexistentesException.class)
+                .hasMessage("Uno o más productos solicitados no existen");
+
+        verify(ordenRepository, never()).save(any());
+        verify(productoClient, never()).actualizarStock(anyLong(), anyInt());
+    }
+
+    @Test
+    @DisplayName("crearOrden lanza StockInsuficienteException y no persiste si falta stock")
+    void testCrearOrdenStockInsuficiente() {
+        when(productoClient.obtenerProducto(1L)).thenReturn(Optional.of(
+                ProductoResponse.builder().id(1L).precioUnitario(1250.50).stock(3).build()));
+
+        assertThatThrownBy(() -> ordenService.crearOrden(nuevaOrden(
+                LineaOrdenCreateDTO.builder().productoId(1L).cantidad(5).build())))
+                .isInstanceOf(StockInsuficienteException.class)
+                .hasMessage("Stock insuficiente para uno o más productos solicitados");
+
+        verify(ordenRepository, never()).save(any());
+        verify(productoClient, never()).actualizarStock(anyLong(), anyInt());
     }
 }

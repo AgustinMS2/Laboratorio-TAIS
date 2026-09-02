@@ -1,11 +1,16 @@
 package uy.edu.utec.taller.ordenes.controller;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,11 +24,13 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 import uy.edu.utec.taller.ordenes.client.ProductoClient;
 import uy.edu.utec.taller.ordenes.client.dto.ProductoResponse;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Transactional
 class OrdenControllerTest {
 
     @Autowired
@@ -117,5 +124,90 @@ class OrdenControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.codigo", is(404)))
                 .andExpect(jsonPath("$.mensaje", is("No existe la orden con id 9999")));
+    }
+
+    @Test
+    @DisplayName("POST /api/ordenes debe retornar 201 Created con el id generado y la cabecera Location")
+    void testCrearOrden() throws Exception {
+        String body = """
+                {
+                  "email": "cliente@email.com",
+                  "direccionEnvio": "Av. Italia 3333, Maldonado",
+                  "telefono": "+59899111222",
+                  "productos": [
+                    { "productoId": 1, "cantidad": 2 },
+                    { "productoId": 2, "cantidad": 3 }
+                  ]
+                }
+                """;
+
+        mockMvc.perform(post("/api/ordenes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(header().string("Location", matchesPattern("/api/ordenes/\\d+")))
+                .andExpect(jsonPath("$.id", notNullValue()));
+    }
+
+    @Test
+    @DisplayName("POST /api/ordenes debe retornar 409 Conflict cuando algún producto no existe")
+    void testCrearOrdenProductoInexistente() throws Exception {
+        String body = """
+                {
+                  "email": "cliente@email.com",
+                  "direccionEnvio": "Av. Italia 3333, Maldonado",
+                  "telefono": "+59899111222",
+                  "productos": [ { "productoId": 99, "cantidad": 1 } ]
+                }
+                """;
+
+        mockMvc.perform(post("/api/ordenes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo", is(409)))
+                .andExpect(jsonPath("$.mensaje", is("Uno o más productos solicitados no existen")))
+                .andExpect(jsonPath("$.detalles[0]", is("No existe el producto con id 99")));
+    }
+
+    @Test
+    @DisplayName("POST /api/ordenes debe retornar 409 Conflict cuando el stock es insuficiente")
+    void testCrearOrdenStockInsuficiente() throws Exception {
+        String body = """
+                {
+                  "email": "cliente@email.com",
+                  "direccionEnvio": "Av. Italia 3333, Maldonado",
+                  "telefono": "+59899111222",
+                  "productos": [ { "productoId": 1, "cantidad": 999 } ]
+                }
+                """;
+
+        mockMvc.perform(post("/api/ordenes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo", is(409)))
+                .andExpect(jsonPath("$.mensaje", is("Stock insuficiente para uno o más productos solicitados")))
+                .andExpect(jsonPath("$.detalles[0]", is("Producto 1: stock disponible 13, cantidad solicitada 999")));
+    }
+
+    @Test
+    @DisplayName("POST /api/ordenes debe retornar 400 Bad Request cuando el cuerpo es inválido")
+    void testCrearOrdenInvalida() throws Exception {
+        String body = """
+                {
+                  "email": "no-es-un-email",
+                  "telefono": "+59899111222",
+                  "productos": []
+                }
+                """;
+
+        mockMvc.perform(post("/api/ordenes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo", is(400)))
+                .andExpect(jsonPath("$.detalles", hasSize(greaterThanOrEqualTo(1))));
     }
 }
