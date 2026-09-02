@@ -2,6 +2,7 @@ package uy.edu.utec.taller.productos.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -12,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import uy.edu.utec.taller.productos.dto.ProductoCreadoDTO;
+import uy.edu.utec.taller.productos.dto.ProductoCreateDTO;
 import uy.edu.utec.taller.productos.dto.ProductoDTO;
 import uy.edu.utec.taller.productos.exception.ProductoNoEncontradoException;
 import uy.edu.utec.taller.productos.model.Producto;
@@ -91,5 +94,32 @@ class ProductoServiceTest {
         assertThatThrownBy(() -> productoService.obtenerProducto(99L))
                 .isInstanceOf(ProductoNoEncontradoException.class)
                 .hasMessage("No existe el producto con id 99");
+    }
+
+    @Test
+    @DisplayName("crearProducto guarda la entidad y devuelve el id generado")
+    void testCrearProducto() {
+        ProductoCreateDTO nuevo = ProductoCreateDTO.builder()
+                .nombre("Monitor Dell 27")
+                .descripcion("4K IPS")
+                .precioUnitario(340.0)
+                .stock(8)
+                .imagenes(List.of("https://cdn.local/img/monitor.jpg"))
+                .build();
+
+        Producto persistido = Producto.builder()
+                .id(50L)
+                .nombre("Monitor Dell 27")
+                .descripcion("4K IPS")
+                .precioUnitario(340.0)
+                .stock(8)
+                .imagenes(List.of("https://cdn.local/img/monitor.jpg"))
+                .build();
+
+        when(productoRepository.save(any(Producto.class))).thenReturn(persistido);
+
+        ProductoCreadoDTO creado = productoService.crearProducto(nuevo);
+
+        assertThat(creado.getId()).isEqualTo(50L);
     }
 }
