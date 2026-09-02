@@ -1,6 +1,10 @@
 server:
   port: 5002
 
+productos:
+  api:
+    base-url: ${PRODUCTOS_API_BASE_URL:http://localhost:5001}
+
 spring:
   application:
     name: ordenes

@@ -1,6 +1,7 @@
 package uy.edu.utec.taller.ordenes.repository;
 
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -12,4 +13,8 @@ public interface OrdenRepository extends JpaRepository<Orden, Long> {
     @Override
     @EntityGraph(attributePaths = "productos")
     List<Orden> findAll();
+
+    @Override
+    @EntityGraph(attributePaths = "productos")
+    Optional<Orden> findById(Long id);
 }
