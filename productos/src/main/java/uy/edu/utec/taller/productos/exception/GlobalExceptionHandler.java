@@ -1,5 +1,6 @@
 package uy.edu.utec.taller.productos.exception;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,10 +22,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorDTO> manejarValidacion(MethodArgumentNotValidException ex) {
-        List<String> detalles = ex.getBindingResult().getFieldErrors().stream()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .sorted()
-                .toList();
+        List<String> detalles = new ArrayList<>();
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+                detalles.add(error.getField() + ": " + error.getDefaultMessage()));
+        ex.getBindingResult().getGlobalErrors().forEach(error ->
+                detalles.add(error.getDefaultMessage()));
+        detalles.sort(String::compareTo);
         ErrorDTO error = ErrorDTO.builder()
                 .codigo(HttpStatus.BAD_REQUEST.value())
                 .mensaje("Datos de entrada inválidos")

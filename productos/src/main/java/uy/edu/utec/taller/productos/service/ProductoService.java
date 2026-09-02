@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import uy.edu.utec.taller.productos.dto.ProductoCreadoDTO;
 import uy.edu.utec.taller.productos.dto.ProductoCreateDTO;
 import uy.edu.utec.taller.productos.dto.ProductoDTO;
+import uy.edu.utec.taller.productos.dto.ProductoPatchDTO;
 import uy.edu.utec.taller.productos.exception.ProductoNoEncontradoException;
 import uy.edu.utec.taller.productos.model.Producto;
 import uy.edu.utec.taller.productos.repository.ProductoRepository;
@@ -38,5 +39,48 @@ public class ProductoService {
         return ProductoCreadoDTO.builder()
                 .id(guardado.getId())
                 .build();
+    }
+
+    @Transactional
+    public void reemplazarProducto(Long id, ProductoCreateDTO productoActualizado) {
+        Producto producto = productoRepository.findById(id)
+                .orElseThrow(() -> new ProductoNoEncontradoException(id));
+
+        producto.setNombre(productoActualizado.getNombre());
+        producto.setDescripcion(productoActualizado.getDescripcion());
+        producto.setPrecioUnitario(productoActualizado.getPrecioUnitario());
+        producto.setStock(productoActualizado.getStock());
+
+        producto.getImagenes().clear();
+        if (productoActualizado.getImagenes() != null) {
+            producto.getImagenes().addAll(productoActualizado.getImagenes());
+        }
+
+        productoRepository.save(producto);
+    }
+
+    @Transactional
+    public void actualizarParcialProducto(Long id, ProductoPatchDTO cambios) {
+        Producto producto = productoRepository.findById(id)
+                .orElseThrow(() -> new ProductoNoEncontradoException(id));
+
+        if (cambios.getNombre() != null) {
+            producto.setNombre(cambios.getNombre());
+        }
+        if (cambios.getDescripcion() != null) {
+            producto.setDescripcion(cambios.getDescripcion());
+        }
+        if (cambios.getPrecioUnitario() != null) {
+            producto.setPrecioUnitario(cambios.getPrecioUnitario());
+        }
+        if (cambios.getStock() != null) {
+            producto.setStock(cambios.getStock());
+        }
+        if (cambios.getImagenes() != null) {
+            producto.getImagenes().clear();
+            producto.getImagenes().addAll(cambios.getImagenes());
+        }
+
+        productoRepository.save(producto);
     }
 }
