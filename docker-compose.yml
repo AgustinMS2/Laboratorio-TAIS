@@ -1,0 +1,95 @@
+name: laboratorio-tais
+
+# Levanta toda la aplicacion en contenedores:
+#   - mysql-productos  : base de datos del microservicio de productos
+#   - mysql-ordenes    : base de datos del microservicio de ordenes
+#   - productos        : API REST de productos  (http://localhost:5001)
+#   - ordenes          : API REST de ordenes    (http://localhost:5002)
+#
+# Uso:
+#   docker compose up --build
+#   docker compose down            (agregar -v para borrar tambien los datos)
+
+services:
+
+  mysql-productos:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: mydatabase
+      MYSQL_USER: myuser
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: verysecret
+    volumes:
+      - mysql-productos-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pverysecret"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+
+  mysql-ordenes:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: mydatabase
+      MYSQL_USER: myuser
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: verysecret
+    volumes:
+      - mysql-ordenes-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pverysecret"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+
+  productos:
+    build:
+      context: ./productos
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-productos:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
+      SPRING_DATASOURCE_USERNAME: myuser
+      SPRING_DATASOURCE_PASSWORD: secret
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+    ports:
+      - "5001:5001"
+    depends_on:
+      mysql-productos:
+        condition: service_healthy
+    networks:
+      - backend
+
+  ordenes:
+    build:
+      context: ./ordenes
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-ordenes:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
+      SPRING_DATASOURCE_USERNAME: myuser
+      SPRING_DATASOURCE_PASSWORD: secret
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+      # URL con la que el microservicio de ordenes consume la API de productos
+      PRODUCTOS_API_BASE_URL: http://productos:5001
+    ports:
+      - "5002:5002"
+    depends_on:
+      mysql-ordenes:
+        condition: service_healthy
+      productos:
+        condition: service_started
+    networks:
+      - backend
+
+volumes:
+  mysql-productos-data:
+  mysql-ordenes-data:
+
+networks:
+  backend:
+    driver: bridge
