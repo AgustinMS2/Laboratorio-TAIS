@@ -1,0 +1,1328 @@
+{
+  "info": {
+    "_postman_id": "20064c8a-57c8-4188-9b79-fc07ceaa6b71",
+    "name": "Laboratorio TAIS - Colección de Pruebas API",
+    "description": "Colección de pruebas de Postman completa para el Laboratorio de Taller de Arquitectura e Integración de Sistemas (TAIS).\n\nIncluye pruebas automáticas sobre:\n- Microservicio de Productos (:5001)\n- Microservicio de Órdenes (:5002)\n- Pruebas E2E de integración (descuento de stock, consistencia de datos, control de conflicto 409)\n- Pruebas de validaciones y respuestas de error (400, 404, 409)\n\nVariables de Colección configuradas por defecto:\n- baseUrlProductos: http://localhost:5001\n- baseUrlOrdenes: http://localhost:5002",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrlProductos",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "baseUrlOrdenes",
+      "value": "http://localhost:5002",
+      "type": "string"
+    },
+    {
+      "key": "productoId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "ordenId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "e2eProductoId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "e2eOrdenId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Microservicio Productos",
+      "description": "Endpoints de /api/productos (Catálogo de productos: GET, POST, PUT, PATCH)",
+      "item": [
+        {
+          "name": "1.1 Listar todos los productos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos"
+              ]
+            },
+            "description": "Retorna la lista completa de productos del catálogo."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('La respuesta es un arreglo de productos', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    if (jsonData.length > 0) {",
+                  "        var p = jsonData[0];",
+                  "        pm.expect(p).to.have.property('id');",
+                  "        pm.expect(p).to.have.property('nombre');",
+                  "        pm.expect(p).to.have.property('precioUnitario');",
+                  "        pm.expect(p).to.have.property('stock');",
+                  "        pm.expect(p).to.have.property('imagenes');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Crear un nuevo producto (Happy Path)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos"
+              ]
+            },
+            "description": "Crea un producto en el catálogo y guarda su ID en la variable 'productoId'.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Monitor Dell UltraSharp 27\",\n  \"descripcion\": \"Monitor 4K UHD IPS con calibración de fábrica\",\n  \"precioUnitario\": 680.0,\n  \"stock\": 25,\n  \"imagenes\": [\n    \"https://cdn.local/img/dell-u27-1.jpg\",\n    \"https://cdn.local/img/dell-u27-2.jpg\"\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Header Location está presente', function () {",
+                  "    pm.response.to.have.header('Location');",
+                  "});",
+                  "pm.test('Retorna el id del producto creado', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('id');",
+                  "    pm.expect(jsonData.id).to.be.a('number');",
+                  "    pm.collectionVariables.set('productoId', jsonData.id);",
+                  "    console.log('Producto creado con ID: ' + jsonData.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 Obtener producto por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{productoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{productoId}}"
+              ]
+            },
+            "description": "Obtiene los datos del producto recientemente creado utilizando su ID."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('El producto retornado coincide con el creado', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    var expectedId = pm.collectionVariables.get('productoId');",
+                  "    pm.expect(jsonData.id).to.eql(Number(expectedId));",
+                  "    pm.expect(jsonData.nombre).to.eql('Monitor Dell UltraSharp 27');",
+                  "    pm.expect(jsonData.precioUnitario).to.eql(680.00);",
+                  "    pm.expect(jsonData.stock).to.eql(25);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 Reemplazar producto completo (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{productoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{productoId}}"
+              ]
+            },
+            "description": "Reemplaza todos los datos del producto. Requiere enviar nombre, precioUnitario y stock obligatoriamente.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Monitor Dell UltraSharp 27 v2\",\n  \"descripcion\": \"Monitor 4K UHD IPS actualizado con USB-C Hub\",\n  \"precioUnitario\": 720.5,\n  \"stock\": 20,\n  \"imagenes\": [\n    \"https://cdn.local/img/dell-u27-v2.jpg\"\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Mensaje de confirmación de actualización', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.mensaje).to.eql('Producto actualizado correctamente');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 Actualizar parcialmente un producto (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{productoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{productoId}}"
+              ]
+            },
+            "description": "Actualiza únicamente los campos enviados (en este caso solo stock y precioUnitario).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"precioUnitario\": 710.0,\n  \"stock\": 18\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Mensaje de confirmación de actualización parcial', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.mensaje).to.eql('Producto actualizado correctamente');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 Verificar cambios aplicados en producto",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{productoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{productoId}}"
+              ]
+            },
+            "description": "Verifica que las actualizaciones de PUT y PATCH se aplicaron correctamente en la base de datos."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Los campos reflejan las modificaciones realizadas', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.nombre).to.eql('Monitor Dell UltraSharp 27 v2');",
+                  "    pm.expect(jsonData.precioUnitario).to.eql(710.00);",
+                  "    pm.expect(jsonData.stock).to.eql(18);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 Error 404 - Obtener producto inexistente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/999999",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "999999"
+              ]
+            },
+            "description": "Debe devolver código HTTP 404 Not Found y el objeto estándar de error."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Estructura de error estándar 404', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(404);",
+                  "    pm.expect(jsonData.mensaje).to.include('No existe el producto');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.8 Error 400 - Crear producto con datos inválidos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos"
+              ]
+            },
+            "description": "Envía datos inválidos (nombre en blanco, precioUnitario negativo, stock negativo). Debe retornar 400 con lista de detalles.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"\",\n  \"precioUnitario\": -10.0,\n  \"stock\": -5\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test('Retorna lista de errores de validación', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(400);",
+                  "    pm.expect(jsonData.mensaje).to.eql('Datos de entrada inválidos');",
+                  "    pm.expect(jsonData.detalles).to.be.an('array');",
+                  "    pm.expect(jsonData.detalles.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.9 Error 404 - Reemplazar producto inexistente (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/999999",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "999999"
+              ]
+            },
+            "description": "Intento de actualizar mediante PUT un producto que no existe en la base de datos.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Inexistente\",\n  \"precioUnitario\": 100.0,\n  \"stock\": 5\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Mensaje de no encontrado', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.10 Error 400 - Actualización parcial vacía (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{productoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{productoId}}"
+              ]
+            },
+            "description": "Envía un cuerpo vacío {}. El validador custom @AlMenosUnCampoPresente debe rechazarlo con 400 Bad Request.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test('Retorna detalle indicando que debe enviarse al menos un campo', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(400);",
+                  "    pm.expect(jsonData.detalles).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11 Error 404 - Actualización parcial inexistente (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/999999",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "999999"
+              ]
+            },
+            "description": "Intento de actualizar parcialmente un producto que no existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stock\": 50\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Microservicio Órdenes",
+      "description": "Endpoints de /api/ordenes (Registro y consulta de órdenes: GET, POST, GET /detalle)",
+      "item": [
+        {
+          "name": "2.1 Listar todas las órdenes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Retorna la lista completa de órdenes de compra registradas."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('La respuesta es un arreglo de órdenes', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('array');",
+                  "    if (jsonData.length > 0) {",
+                  "        var o = jsonData[0];",
+                  "        pm.expect(o).to.have.property('id');",
+                  "        pm.expect(o).to.have.property('email');",
+                  "        pm.expect(o).to.have.property('direccionEnvio');",
+                  "        pm.expect(o).to.have.property('telefono');",
+                  "        pm.expect(o).to.have.property('estado');",
+                  "        pm.expect(o).to.have.property('fechaCreacion');",
+                  "        pm.expect(o).to.have.property('productos');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Crear una nueva orden (Happy Path)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Registra una orden de compra en estado Created usando el producto previamente creado o existente.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"juan.perez@dominio.uy\",\n  \"direccionEnvio\": \"Rambla Claudio Williman Parada 15, Punta del Este\",\n  \"telefono\": \"+59899333444\",\n  \"productos\": [\n    {\n      \"productoId\": \"{{productoId}}\",\n      \"cantidad\": 2\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Header Location presente', function () {",
+                  "    pm.response.to.have.header('Location');",
+                  "});",
+                  "pm.test('Retorna el ID de la orden creada', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('id');",
+                  "    pm.expect(jsonData.id).to.be.a('number');",
+                  "    pm.collectionVariables.set('ordenId', jsonData.id);",
+                  "    console.log('Orden creada con ID: ' + jsonData.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Obtener orden por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{ordenId}}",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{ordenId}}"
+              ]
+            },
+            "description": "Obtiene los datos de la orden recién creada."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Datos de la orden son consistentes', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    var expectedId = pm.collectionVariables.get('ordenId');",
+                  "    pm.expect(jsonData.id).to.eql(Number(expectedId));",
+                  "    pm.expect(jsonData.email).to.eql('juan.perez@dominio.uy');",
+                  "    pm.expect(jsonData.estado).to.eql('Created');",
+                  "    pm.expect(jsonData.productos).to.be.an('array');",
+                  "    pm.expect(jsonData.productos.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 Obtener orden con detalle completo de productos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{ordenId}}/detalle",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{ordenId}}",
+                "detalle"
+              ]
+            },
+            "description": "Obtiene la orden con el detalle completo de cada producto (consumiendo el servicio de Productos vía HTTP) y el cálculo de total."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Estructura de detalle completa con subtotales y total', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('total');",
+                  "    pm.expect(jsonData.total).to.be.above(0);",
+                  "    pm.expect(jsonData.productos).to.be.an('array');",
+                  "    var linea = jsonData.productos[0];",
+                  "    pm.expect(linea).to.have.property('cantidad');",
+                  "    pm.expect(linea).to.have.property('subtotal');",
+                  "    pm.expect(linea).to.have.property('producto');",
+                  "    pm.expect(linea.producto).to.have.property('nombre');",
+                  "    pm.expect(linea.producto).to.have.property('precioUnitario');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 Error 404 - Obtener orden inexistente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/999999",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "999999"
+              ]
+            },
+            "description": "Intento de obtener una orden con ID inexistente."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Mensaje de orden no encontrada', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(404);",
+                  "    pm.expect(jsonData.mensaje).to.include('No existe la orden');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 Error 404 - Detalle de orden inexistente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/999999/detalle",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "999999",
+                "detalle"
+              ]
+            },
+            "description": "Intento de obtener detalle de una orden inexistente."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.7 Error 400 - Crear orden con datos inválidos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Envía datos inválidos: email con formato erróneo, teléfono inválido y lista de productos vacía.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"email-no-valido\",\n  \"direccionEnvio\": \"\",\n  \"telefono\": \"123\",\n  \"productos\": []\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test('Errores de validación detallados', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(400);",
+                  "    pm.expect(jsonData.mensaje).to.eql('Datos de entrada inválidos');",
+                  "    pm.expect(jsonData.detalles).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.8 Error 409 - Crear orden con producto inexistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Intento de registrar orden solicitando un producto con ID que no existe (ej. 999999). Debe retornar 409 Conflict.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"cliente@email.com\",\n  \"direccionEnvio\": \"Av. Italia 3333, Maldonado\",\n  \"telefono\": \"+59899111222\",\n  \"productos\": [\n    {\n      \"productoId\": 999999,\n      \"cantidad\": 1\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Mensaje de conflicto por producto inexistente', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(409);",
+                  "    pm.expect(jsonData.mensaje).to.include('no existen');",
+                  "    pm.expect(jsonData.detalles).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.9 Error 409 - Crear orden con stock insuficiente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Intento de registrar orden solicitando una cantidad astronómica (ej. 999999) para el producto. Debe retornar 409 Conflict.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"cliente@email.com\",\n  \"direccionEnvio\": \"Av. Italia 3333, Maldonado\",\n  \"telefono\": \"+59899111222\",\n  \"productos\": [\n    {\n      \"productoId\": \"{{productoId}}\",\n      \"cantidad\": 999999\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code es 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Mensaje de stock insuficiente', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.codigo).to.eql(409);",
+                  "    pm.expect(jsonData.mensaje).to.include('Stock insuficiente');",
+                  "    pm.expect(jsonData.detalles[0]).to.include('stock disponible');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Pruebas de Integración E2E",
+      "description": "Flujo continuo que crea productos, levanta órdenes, descuenta stock y verifica integridad referencial",
+      "item": [
+        {
+          "name": "3.1 [E2E] Crear producto para prueba de flujo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos"
+              ]
+            },
+            "description": "Crea un producto específico con stock inicial de 10 unidades para testear la integración completa.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Teclado Mecánico RGB E2E\",\n  \"descripcion\": \"Teclado mecánico para pruebas de integración E2E\",\n  \"precioUnitario\": 150.0,\n  \"stock\": 10,\n  \"imagenes\": [\n    \"https://cdn.local/img/teclado-e2e.jpg\"\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('e2eProductoId', jsonData.id);",
+                  "console.log('E2E Producto creado: ' + jsonData.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 [E2E] Verificar stock inicial (10)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{e2eProductoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{e2eProductoId}}"
+              ]
+            },
+            "description": "Verifica que el stock inicial del producto creado sea exactamente 10."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Stock inicial es 10', function () {",
+                  "    pm.expect(jsonData.stock).to.eql(10);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 [E2E] Crear orden consumiendo 4 unidades",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Registra una orden solicitando 4 unidades del producto E2E. El microservicio de Órdenes debe descontar el stock en Productos.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"e2e.tester@email.com\",\n  \"direccionEnvio\": \"Calle Falsa 123, Montevideo\",\n  \"telefono\": \"+59898765432\",\n  \"productos\": [\n    {\n      \"productoId\": \"{{e2eProductoId}}\",\n      \"cantidad\": 4\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('e2eOrdenId', jsonData.id);",
+                  "console.log('E2E Orden creada: ' + jsonData.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 [E2E] Verificar descuento automático de stock (Stock = 6)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{e2eProductoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{e2eProductoId}}"
+              ]
+            },
+            "description": "Verifica que en el microservicio de Productos el stock se haya reducido de 10 a 6 tras la creación de la orden."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('El stock remanente es exactamente 6', function () {",
+                  "    pm.expect(jsonData.stock).to.eql(6);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 [E2E] Verificar detalle y cálculos de la orden (4 x 150 = 600)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{e2eOrdenId}}/detalle",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{e2eOrdenId}}",
+                "detalle"
+              ]
+            },
+            "description": "Verifica que el endpoint /detalle devuelva los datos correctos del producto y el total calculado."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('El total de la orden es 600.00', function () {",
+                  "    pm.expect(jsonData.total).to.eql(600.00);",
+                  "});",
+                  "pm.test('La línea contiene datos correctos', function () {",
+                  "    var linea = jsonData.productos[0];",
+                  "    pm.expect(linea.cantidad).to.eql(4);",
+                  "    pm.expect(linea.subtotal).to.eql(600.00);",
+                  "    pm.expect(linea.producto.nombre).to.eql('Teclado Mecánico RGB E2E');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 [E2E] Intentar pedir 10 unidades (disponibles 6) -> Conflicto 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Intenta comprar 10 unidades cuando solo restan 6. Debe fallar con 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"e2e.tester@email.com\",\n  \"direccionEnvio\": \"Calle Falsa 123, Montevideo\",\n  \"telefono\": \"+59898765432\",\n  \"productos\": [\n    {\n      \"productoId\": \"{{e2eProductoId}}\",\n      \"cantidad\": 10\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Error indica stock disponible 6 y solicitado 10', function () {",
+                  "    pm.expect(jsonData.codigo).to.eql(409);",
+                  "    pm.expect(jsonData.detalles[0]).to.include('stock disponible 6');",
+                  "    pm.expect(jsonData.detalles[0]).to.include('cantidad solicitada 10');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.7 [E2E] Verificar que el stock no fue alterado tras el fallo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{e2eProductoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{e2eProductoId}}"
+              ]
+            },
+            "description": "Verifica que tras rechazar la orden, el stock sigue intacto en 6 unidades."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('El stock se mantiene en 6', function () {",
+                  "    pm.expect(jsonData.stock).to.eql(6);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
