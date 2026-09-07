@@ -156,11 +156,36 @@ cd ordenes   && ./mvnw spring-boot:run     # en otra
 
 ## Tests
 
+### Tests unitarios y de integración (MockMvc + H2)
+
 Los tests usan H2 en memoria (perfil de test), no requieren Docker:
 
 ```bash
 cd productos && ./mvnw test
 cd ordenes   && ./mvnw test
+```
+
+### Script de pruebas de APIs REST con invocaciones (curl)
+
+Se incluye el script automatizado [`test_apis.sh`](test_apis.sh) que valida todos los endpoints de las APIs REST contra los microservicios en ejecución (Docker o local).
+
+Cubre:
+1. **Microservicio Productos (`:5001`)**: Listado, creación (201), consulta por ID (200), reemplazo total (PUT 200), actualización parcial (PATCH 200), validaciones y errores (400, 404).
+2. **Microservicio Órdenes (`:5002`)**: Listado, creación (201), consulta por ID (200), detalle enriquecido (200), validaciones y errores (400, 404, conflicto 409 por stock o producto inexistente).
+3. **Flujo E2E de integración**: Creación de producto con stock controlado, creación de orden, validación de descuento automático de stock en Productos, verificación de cálculo de totales en `/detalle`, control de stock insuficiente (409) e invariancia del stock ante fallo.
+
+```bash
+# Ejecutar todas las pruebas
+./test_apis.sh
+
+# Modo verbose (muestra curl exacto, payload enviado y respuesta HTTP)
+./test_apis.sh --verbose
+
+# Ejecutar una suite específica (productos, ordenes o e2e)
+./test_apis.sh --suite e2e
+
+# Ver todas las opciones y parámetros
+./test_apis.sh --help
 ```
 
 ## Entregables (Laboratorio – Parte 2)
@@ -171,4 +196,5 @@ cd ordenes   && ./mvnw test
 | Diagrama MER (PDF)            | `Laboratorio 2.pdf`                        |
 | Código fuente                 | `productos/`, `ordenes/`                   |
 | `docker-compose.yml`          | raíz del repositorio                       |
-| Script de invocaciones (curl) | _pendiente_                                |
+| Script de invocaciones (curl) | [`test_apis.sh`](test_apis.sh)             |
+
