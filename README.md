@@ -245,8 +245,8 @@ estático `fromEntity`) y la misma configuración de build y de tests.
 **Windows** (PowerShell):
 
 ```powershell
-.levantar.ps1              # construye las imágenes y levanta todo
-.levantar.ps1 -Reset -Test # desde cero (borra los datos) y ejecuta las pruebas al terminar
+./levantar.ps1              # construye las imágenes y levanta todo
+./levantar.ps1 -Reset -Test # desde cero (borra los datos) y ejecuta las pruebas al terminar
 ```
 
 Si PowerShell bloquea la ejecución de scripts, usá el lanzador: `.levantar.cmd` (acepta las mismas opciones).
@@ -379,7 +379,6 @@ cada orden deje de estar en `Created`.
 | Entregable                          | Ubicación                                                        |
 |-------------------------------------|------------------------------------------------------------------|
 | Especificación OpenAPI (YAML)       | `openapi.yaml`                                                   |
-| Diagrama MER actualizado (PDF)      | `MER_Laboratorio_TAIS.pdf`                                       |
 | Código fuente                       | `productos/`, `ordenes/`, `publicador/`, `procesamiento/`, `mosquitto/` |
 | `docker-compose.yml`                | raíz del repositorio                                             |
 | Script de invocaciones (curl)       | [`test_apis.sh`](test_apis.sh)                                   |
