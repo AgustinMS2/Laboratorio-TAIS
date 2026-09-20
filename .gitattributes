@@ -1,0 +1,4 @@
+# Los scripts de shell deben conservar fin de linea LF aunque se editen o clonen en Windows;
+# de lo contrario Linux/macOS fallan con "bad interpreter" o errores de sintaxis.
+*.sh  text eol=lf
+*.cmd text eol=crlf

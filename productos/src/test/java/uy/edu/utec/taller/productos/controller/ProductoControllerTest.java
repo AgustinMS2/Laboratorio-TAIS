@@ -252,4 +252,26 @@ class ProductoControllerTest {
                 .andExpect(jsonPath("$.codigo", is(400)))
                 .andExpect(jsonPath("$.detalles", hasSize(greaterThanOrEqualTo(1))));
     }
+
+    @Test
+    @DisplayName("POST con Content-Type distinto de application/json retorna 400 Bad Request con mensaje de error")
+    void testContentTypeNoJson() throws Exception {
+        mockMvc.perform(post("/api/productos")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.codigo", is(400)))
+                .andExpect(jsonPath("$.mensaje", is("El Content-Type de la solicitud debe ser application/json")));
+    }
+
+    @Test
+    @DisplayName("GET con un id no numérico retorna 400 Bad Request con mensaje de error")
+    void testIdNoNumerico() throws Exception {
+        mockMvc.perform(get("/api/productos/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.codigo", is(400)))
+                .andExpect(jsonPath("$.mensaje", is("El parámetro 'id' tiene un valor inválido: 'abc'")));
+    }
 }

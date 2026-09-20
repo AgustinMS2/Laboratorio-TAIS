@@ -1,0 +1,23 @@
+server:
+  port: 5004
+
+# Servicio del que se toman las órdenes listas para procesar (estado Created)
+ordenes:
+  api:
+    base-url: ${ORDENES_API_BASE_URL:http://localhost:5002}
+
+# Mensajería (parte 3): cada orden en Created se publica en Mosquitto (MQTT)
+mensajeria:
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
+    topic: ${MQTT_TOPIC:ordenes/procesar}
+    qos: 1
+  publicador:
+    enabled: true
+    intervalo-ms: 2000        # cada cuánto se consultan las órdenes pendientes de publicar
+    reintento-segundos: 120   # se republica una orden que sigue en Created pasado este tiempo
+    lote: 50                  # máximo de órdenes publicadas por ciclo
+
+spring:
+  application:
+    name: publicador

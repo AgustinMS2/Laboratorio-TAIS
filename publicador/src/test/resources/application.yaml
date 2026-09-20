@@ -1,0 +1,10 @@
+server:
+  port: 5004
+
+mensajeria:
+  publicador:
+    enabled: false   # los tests no dependen de un broker MQTT ni del servicio de órdenes
+
+spring:
+  application:
+    name: publicador

@@ -1,0 +1,19 @@
+# Solo para desarrollo local con ./mvnw spring-boot:run (Docker Compose support de Spring Boot):
+# levanta la base MySQL y el broker Mosquitto. Para ejecutar todo en contenedores usar el
+# docker-compose.yml de la raiz.
+services:
+  mysql:
+    image: 'mysql:latest'
+    environment:
+      - 'MYSQL_DATABASE=mydatabase'
+      - 'MYSQL_PASSWORD=secret'
+      - 'MYSQL_ROOT_PASSWORD=verysecret'
+      - 'MYSQL_USER=myuser'
+    ports:
+      - '3306'
+  mosquitto:
+    image: 'eclipse-mosquitto:2'
+    volumes:
+      - '../mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro'
+    ports:
+      - '1883:1883'

@@ -9,7 +9,17 @@ info:
     La solución sigue un estilo arquitectónico de microservicios: los recursos
     `/api/productos` y `/api/ordenes` son atendidos por servicios independientes,
     expuestos aquí bajo una única especificación.
-  version: 1.0.0
+
+    **Parte 3 - procesamiento por mensajería.** El servicio Publicador (`/api/publicaciones`)
+    toma de Órdenes (`GET /api/ordenes?estado=Created`) cada orden lista para procesar y la
+    publica en un broker MQTT (Eclipse Mosquitto, tópico `ordenes/procesar`) como JSON
+    `{"id", "estado", "fechaCreacion"}`. El servicio
+    de Procesamiento (`/api/facturas`, `/api/procesamientos`) recibe el mensaje, verifica que
+    la orden no haya sido procesada, valida el stock de cada producto y:
+    con stock descuenta el stock, genera la factura y deja la orden en `Ready to Delivery`;
+    sin stock la deja en `No Stock`. El cambio de estado se informa con
+    `PATCH /api/ordenes/{id}/estado`.
+  version: 1.1.0
   contact:
     name: Equipo de desarrollo - Taller IISS (UTEC - ITR Este)
 
@@ -20,12 +30,20 @@ servers:
     description: Microservicio de Productos
   - url: http://localhost:5002
     description: Microservicio de Órdenes
+  - url: http://localhost:5003
+    description: Microservicio de Procesamiento (facturas)
+  - url: http://localhost:5004
+    description: Microservicio Publicador (publica en el broker MQTT)
 
 tags:
   - name: Productos
     description: Alta, consulta y modificación del catálogo de productos
   - name: Ordenes
     description: Registro y consulta de órdenes de compra
+  - name: Procesamiento
+    description: Facturas generadas y órdenes procesadas por el servicio que consume el broker de mensajería (parte 3)
+  - name: Publicador
+    description: Servicio que publica en el broker de mensajería las órdenes listas para procesar (parte 3)
 
 paths:
 
@@ -182,8 +200,18 @@ paths:
       summary: Lista todas las órdenes de compra
       description: |
         Devuelve los datos de cada orden junto con la lista de productos
-        solicitados (identificador y cantidad).
+        solicitados (identificador y cantidad). Con el parámetro opcional `estado`
+        devuelve solo las órdenes en ese estado (el servicio Publicador pide las que
+        están en `Created`).
       operationId: listarOrdenes
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          description: Filtra por estado de la orden
+          schema:
+            $ref: '#/components/schemas/EstadoOrden'
+          example: Created
       responses:
         '200':
           description: Lista de órdenes
@@ -205,14 +233,20 @@ paths:
                       cantidad: 2
                     - productoId: 2
                       cantidad: 5
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
 
     post:
       tags: [Ordenes]
       summary: Registra una nueva orden de compra
       description: |
-        Crea la orden en estado `Created` y descuenta el stock de cada producto
-        solicitado. Si algún producto no existe o el stock es insuficiente, la
-        orden no se crea y se responde con `409 Conflict`.
+        Crea la orden en estado `Created`. Si algún producto no existe o el stock
+        actual es insuficiente, la orden no se crea y se responde con `409 Conflict`.
+
+        El alta **no descuenta stock**: el servicio Publicador la publica en el broker de
+        mensajería y el servicio de Procesamiento descuenta el stock y la deja en
+        `Ready to Delivery` (o en `No Stock` si el stock ya no alcanza, p. ej. porque
+        otra orden lo consumió antes). El resultado se consulta con `GET /api/ordenes/{id}`.
       operationId: crearOrden
       requestBody:
         required: true
@@ -348,6 +382,180 @@ paths:
                         - https://cdn.local/img/mx-master-1.jpg
         '404':
           $ref: '#/components/responses/OrdenNoEncontrada'
+
+  /api/ordenes/{id}/estado:
+    parameters:
+      - $ref: '#/components/parameters/OrdenId'
+    patch:
+      tags: [Ordenes]
+      summary: Informa el resultado del procesamiento de una orden
+      description: |
+        Lo invoca el servicio de Procesamiento. Solo una orden en `Created` puede pasar a
+        `Ready to Delivery` o `No Stock`. Repetir el estado ya aplicado responde `200`
+        (idempotente); pedir otro estado distinto sobre una orden ya resuelta responde `409`.
+      operationId: actualizarEstadoOrden
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdenEstadoUpdate'
+            example:
+              estado: Ready to Delivery
+      responses:
+        '200':
+          description: Estado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mensaje'
+              example:
+                mensaje: Estado de la orden actualizado a Ready to Delivery
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/OrdenNoEncontrada'
+        '409':
+          description: La orden ya no está en `Created` y no admite ese cambio de estado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                codigo: 409
+                mensaje: "La orden 1 no puede pasar de 'No Stock' a 'Ready to Delivery'"
+                detalles:
+                  - "Solo una orden en estado 'Created' puede pasar a 'Ready to Delivery' o 'No Stock'"
+
+  /api/publicaciones:
+    get:
+      tags: [Publicador]
+      summary: Lista las órdenes que el publicador publicó en el broker
+      description: |
+        Cada ciclo el publicador consulta las órdenes en `Created` y publica en el tópico
+        `ordenes/procesar` las que nunca publicó o que siguen sin procesarse pasado el tiempo de
+        reintento. El registro vive en memoria (se reinicia con el servicio).
+      operationId: listarPublicaciones
+      responses:
+        '200':
+          description: Órdenes publicadas, ordenadas por identificador de orden
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Publicacion'
+              example:
+                - ordenId: 1
+                  ultimaPublicacion: '2026-06-21T14:30:03-03:00'
+                  veces: 1
+
+  /api/facturas:
+    get:
+      tags: [Procesamiento]
+      summary: Lista las facturas generadas
+      description: |
+        Una factura se genera por cada orden que quedó en `Ready to Delivery`. Con el
+        parámetro `ordenId` devuelve solo las facturas de esa orden (lista vacía si no tiene).
+      operationId: listarFacturas
+      parameters:
+        - name: ordenId
+          in: query
+          required: false
+          description: Filtra por identificador de orden
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Lista de facturas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Factura'
+              example:
+                - id: 1
+                  ordenId: 1
+                  fecha: '2026-06-21T14:30:05-03:00'
+                  email: cliente@email.com
+                  direccionEnvio: Av. Italia 3333, Maldonado
+                  telefono: '+59899111222'
+                  items:
+                    - productoId: 1
+                      descripcion: Notebook Lenovo ThinkPad
+                      cantidad: 2
+                      precioUnitario: 1250.50
+                      subtotal: 2501.00
+                    - productoId: 2
+                      descripcion: Mouse Logitech MX Master 3
+                      cantidad: 5
+                      precioUnitario: 99.90
+                      subtotal: 499.50
+                  total: 3000.50
+
+  /api/facturas/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador único de la factura
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+        example: 1
+    get:
+      tags: [Procesamiento]
+      summary: Obtiene una factura por su identificador
+      operationId: obtenerFactura
+      responses:
+        '200':
+          description: Factura solicitada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Factura'
+        '404':
+          description: No existe una factura con el identificador indicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                codigo: 404
+                mensaje: No existe la factura con id 999
+
+  /api/procesamientos:
+    get:
+      tags: [Procesamiento]
+      summary: Lista las órdenes ya procesadas y su resultado
+      description: |
+        Registro que usa el procesador para no procesar dos veces la misma orden
+        (mensajes duplicados). Incluye las que quedaron en `No Stock`, con el detalle del faltante.
+      operationId: listarProcesamientos
+      responses:
+        '200':
+          description: Lista de procesamientos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Procesamiento'
+              example:
+                - id: 1
+                  ordenId: 1
+                  resultado: Ready to Delivery
+                  fechaProcesamiento: '2026-06-21T14:30:05-03:00'
+                  ordenActualizada: true
+                - id: 2
+                  ordenId: 2
+                  resultado: No Stock
+                  fechaProcesamiento: '2026-06-21T14:31:10-03:00'
+                  ordenActualizada: true
+                  detalle: 'Producto 3: stock disponible 2, cantidad solicitada 3'
 
 components:
 
@@ -547,9 +755,13 @@ components:
 
     EstadoOrden:
       type: string
-      description: Estado del pedido
+      description: |
+        Estado del pedido. Las órdenes se crean en `Created`; el servicio de
+        Procesamiento las pasa a `Ready to Delivery` o `No Stock`.
       enum:
         - Created
+        - Ready to Delivery
+        - No Stock
         - Confirmed
         - Shipped
         - Delivered
@@ -709,3 +921,132 @@ components:
           description: Detalle de los errores de validación, si corresponde
           items:
             type: string
+
+    OrdenEstadoUpdate:
+      type: object
+      description: Resultado del procesamiento a aplicar sobre la orden
+      required: [estado]
+      properties:
+        estado:
+          type: string
+          enum:
+            - Ready to Delivery
+            - No Stock
+          example: Ready to Delivery
+
+    FacturaItem:
+      type: object
+      description: Ítem de factura, uno por cada producto solicitado
+      required: [productoId, descripcion, cantidad, precioUnitario, subtotal]
+      properties:
+        productoId:
+          type: integer
+          format: int64
+          example: 1
+        descripcion:
+          type: string
+          description: Nombre del producto al momento de facturar
+          example: Notebook Lenovo ThinkPad
+        cantidad:
+          type: integer
+          format: int32
+          example: 2
+        precioUnitario:
+          type: number
+          format: double
+          example: 1250.50
+        subtotal:
+          type: number
+          format: double
+          description: precioUnitario x cantidad
+          example: 2501.00
+
+    Factura:
+      type: object
+      description: |
+        Factura de una orden que quedó en `Ready to Delivery`. El total es la suma de los
+        subtotales de todos los ítems.
+      required: [id, ordenId, fecha, email, direccionEnvio, telefono, items, total]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        ordenId:
+          type: integer
+          format: int64
+          example: 1
+        fecha:
+          type: string
+          format: date-time
+          example: '2026-06-21T14:30:05-03:00'
+        email:
+          type: string
+          format: email
+          example: cliente@email.com
+        direccionEnvio:
+          type: string
+          example: Av. Italia 3333, Maldonado
+        telefono:
+          type: string
+          example: '+59899111222'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacturaItem'
+        total:
+          type: number
+          format: double
+          example: 3000.50
+
+    Procesamiento:
+      type: object
+      description: Registro de una orden ya procesada por el servicio de Procesamiento
+      required: [id, ordenId, resultado, fechaProcesamiento, ordenActualizada]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        ordenId:
+          type: integer
+          format: int64
+          example: 1
+        resultado:
+          type: string
+          enum:
+            - Ready to Delivery
+            - No Stock
+          example: Ready to Delivery
+        fechaProcesamiento:
+          type: string
+          format: date-time
+          example: '2026-06-21T14:30:05-03:00'
+        ordenActualizada:
+          type: boolean
+          description: "`true` cuando el resultado ya fue informado al servicio de Órdenes"
+          example: true
+        detalle:
+          type: string
+          nullable: true
+          description: Motivo del faltante cuando el resultado es `No Stock`
+          example: 'Producto 3: stock disponible 2, cantidad solicitada 3'
+
+    Publicacion:
+      type: object
+      description: Registro de una orden publicada por el servicio Publicador
+      required: [ordenId, ultimaPublicacion, veces]
+      properties:
+        ordenId:
+          type: integer
+          format: int64
+          example: 1
+        ultimaPublicacion:
+          type: string
+          format: date-time
+          example: '2026-06-21T14:30:03-03:00'
+        veces:
+          type: integer
+          format: int32
+          description: Cantidad de veces que se publicó (más de una si siguió en `Created` y se reintentó)
+          example: 1

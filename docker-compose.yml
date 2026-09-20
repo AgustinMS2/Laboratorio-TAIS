@@ -1,50 +1,73 @@
 name: laboratorio-tais
 
 # Levanta toda la aplicacion en contenedores:
-#   - mysql-productos  : base de datos del microservicio de productos
-#   - mysql-ordenes    : base de datos del microservicio de ordenes
-#   - productos        : API REST de productos  (http://localhost:5001)
-#   - ordenes          : API REST de ordenes    (http://localhost:5002)
+#   - mysql-productos     : base de datos del microservicio de productos
+#   - mysql-ordenes       : base de datos del microservicio de ordenes
+#   - mysql-procesamiento : base de datos del microservicio de procesamiento (facturas)
+#   - mosquitto           : broker MQTT (Eclipse Mosquitto) para la mensajeria entre servicios
+#   - productos           : API REST de productos      (http://localhost:5001)
+#   - ordenes             : API REST de ordenes        (http://localhost:5002)
+#   - publicador          : publica en el broker las ordenes listas para procesar (http://localhost:5004)
+#   - procesamiento       : recibe las ordenes del broker, las procesa y las factura (http://localhost:5003)
 #
 # Uso:
 #   docker compose up --build
 #   docker compose down            (agregar -v para borrar tambien los datos)
+#
+# Ver los mensajes que circulan por el broker:
+#   docker compose exec mosquitto mosquitto_sub -t "ordenes/#" -v
+#
+# Se limita la memoria de las JVM y de MySQL para que el stack completo sea liviano.
+
+x-mysql: &mysql
+  image: mysql:8.4
+  command: ["--performance-schema=OFF", "--innodb-buffer-pool-size=64M", "--max-connections=30"]
+  environment: &mysql-env
+    MYSQL_DATABASE: mydatabase
+    MYSQL_USER: myuser
+    MYSQL_PASSWORD: secret
+    MYSQL_ROOT_PASSWORD: verysecret
+  healthcheck:
+    test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pverysecret"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 30s
+  networks:
+    - backend
+
+x-java-opts: &java-opts "-Xmx256m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m"
 
 services:
 
   mysql-productos:
-    image: mysql:8.4
-    environment:
-      MYSQL_DATABASE: mydatabase
-      MYSQL_USER: myuser
-      MYSQL_PASSWORD: secret
-      MYSQL_ROOT_PASSWORD: verysecret
+    <<: *mysql
     volumes:
       - mysql-productos-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pverysecret"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    networks:
-      - backend
 
   mysql-ordenes:
-    image: mysql:8.4
-    environment:
-      MYSQL_DATABASE: mydatabase
-      MYSQL_USER: myuser
-      MYSQL_PASSWORD: secret
-      MYSQL_ROOT_PASSWORD: verysecret
+    <<: *mysql
     volumes:
       - mysql-ordenes-data:/var/lib/mysql
+
+  mysql-procesamiento:
+    <<: *mysql
+    volumes:
+      - mysql-procesamiento-data:/var/lib/mysql
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    ports:
+      - "1883:1883"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pverysecret"]
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -p 1883 -t healthcheck/ping -m ok"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 6
+      start_period: 5s
     networks:
       - backend
 
@@ -52,6 +75,7 @@ services:
     build:
       context: ./productos
     environment:
+      JAVA_TOOL_OPTIONS: *java-opts
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-productos:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
       SPRING_DATASOURCE_USERNAME: myuser
       SPRING_DATASOURCE_PASSWORD: secret
@@ -69,6 +93,7 @@ services:
     build:
       context: ./ordenes
     environment:
+      JAVA_TOOL_OPTIONS: *java-opts
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-ordenes:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
       SPRING_DATASOURCE_USERNAME: myuser
       SPRING_DATASOURCE_PASSWORD: secret
@@ -86,9 +111,59 @@ services:
     networks:
       - backend
 
+  publicador:
+    build:
+      context: ./publicador
+    environment:
+      JAVA_TOOL_OPTIONS: *java-opts
+      # Servicio del que toma las ordenes en estado Created (GET /api/ordenes?estado=Created)
+      ORDENES_API_BASE_URL: http://ordenes:5002
+      # Broker MQTT donde publica cada orden lista para procesar
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+    ports:
+      - "5004:5004"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      ordenes:
+        condition: service_started
+    networks:
+      - backend
+
+  procesamiento:
+    build:
+      context: ./procesamiento
+    environment:
+      JAVA_TOOL_OPTIONS: *java-opts
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-procesamiento:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
+      SPRING_DATASOURCE_USERNAME: myuser
+      SPRING_DATASOURCE_PASSWORD: secret
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+      # Servicios que consume el procesador (leer la orden, consultar/descontar stock, informar el estado)
+      ORDENES_API_BASE_URL: http://ordenes:5002
+      PRODUCTOS_API_BASE_URL: http://productos:5001
+      # Broker MQTT del que recibe las ordenes
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+    ports:
+      - "5003:5003"
+    depends_on:
+      mysql-procesamiento:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+      productos:
+        condition: service_started
+      ordenes:
+        condition: service_started
+    networks:
+      - backend
+
 volumes:
   mysql-productos-data:
   mysql-ordenes-data:
+  mysql-procesamiento-data:
+  mosquitto-data:
 
 networks:
   backend:

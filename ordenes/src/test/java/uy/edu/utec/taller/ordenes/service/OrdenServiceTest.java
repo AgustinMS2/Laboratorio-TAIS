@@ -3,9 +3,10 @@ package uy.edu.utec.taller.ordenes.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +16,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -25,9 +27,11 @@ import uy.edu.utec.taller.ordenes.dto.OrdenCreadaDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenCreateDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDetalleDTO;
+import uy.edu.utec.taller.ordenes.exception.EstadoNoPermitidoException;
 import uy.edu.utec.taller.ordenes.exception.OrdenNoEncontradaException;
 import uy.edu.utec.taller.ordenes.exception.ProductosInexistentesException;
 import uy.edu.utec.taller.ordenes.exception.StockInsuficienteException;
+import uy.edu.utec.taller.ordenes.exception.TransicionEstadoInvalidaException;
 import uy.edu.utec.taller.ordenes.model.EstadoOrden;
 import uy.edu.utec.taller.ordenes.model.LineaOrden;
 import uy.edu.utec.taller.ordenes.model.Orden;
@@ -72,6 +76,17 @@ class OrdenServiceTest {
         assertThat(dto.getProductos()).hasSize(2);
         assertThat(dto.getProductos().getFirst().getProductoId()).isEqualTo(1L);
         assertThat(dto.getProductos().getFirst().getCantidad()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("listarOrdenesPorEstado consulta el repositorio por estado y mapea a DTOs")
+    void testListarOrdenesPorEstado() {
+        when(ordenRepository.findByEstadoOrderByIdAsc(EstadoOrden.Created)).thenReturn(List.of(ordenEn(EstadoOrden.Created)));
+
+        List<OrdenDTO> resultado = ordenService.listarOrdenesPorEstado(EstadoOrden.Created);
+
+        assertThat(resultado).hasSize(1);
+        assertThat(resultado.getFirst().getEstado()).isEqualTo(EstadoOrden.Created);
     }
 
     @Test
@@ -171,7 +186,7 @@ class OrdenServiceTest {
     }
 
     @Test
-    @DisplayName("crearOrden persiste la orden en estado Created y descuenta el stock de cada producto")
+    @DisplayName("crearOrden persiste la orden en estado Created y NO descuenta stock (lo hace el procesamiento)")
     void testCrearOrden() {
         when(productoClient.obtenerProducto(1L)).thenReturn(Optional.of(
                 ProductoResponse.builder().id(1L).precioUnitario(1250.50).stock(15).build()));
@@ -188,8 +203,12 @@ class OrdenServiceTest {
                 LineaOrdenCreateDTO.builder().productoId(2L).cantidad(5).build()));
 
         assertThat(creada.getId()).isEqualTo(1001L);
-        verify(productoClient).actualizarStock(1L, 13);
-        verify(productoClient).actualizarStock(2L, 35);
+        ArgumentCaptor<Orden> guardada = ArgumentCaptor.forClass(Orden.class);
+        verify(ordenRepository).save(guardada.capture());
+        assertThat(guardada.getValue().getEstado()).isEqualTo(EstadoOrden.Created);
+        // Solo consulta los productos; ninguna otra interacción (no modifica stock).
+        verify(productoClient, times(2)).obtenerProducto(anyLong());
+        verifyNoMoreInteractions(productoClient);
     }
 
     @Test
@@ -203,7 +222,6 @@ class OrdenServiceTest {
                 .hasMessage("Uno o más productos solicitados no existen");
 
         verify(ordenRepository, never()).save(any());
-        verify(productoClient, never()).actualizarStock(anyLong(), anyInt());
     }
 
     @Test
@@ -218,6 +236,78 @@ class OrdenServiceTest {
                 .hasMessage("Stock insuficiente para uno o más productos solicitados");
 
         verify(ordenRepository, never()).save(any());
-        verify(productoClient, never()).actualizarStock(anyLong(), anyInt());
+    }
+
+    private static Orden ordenEn(EstadoOrden estado) {
+        return Orden.builder()
+                .id(1001L)
+                .email("cliente@email.com")
+                .direccionEnvio("Av. Italia 3333, Maldonado")
+                .telefono("+59899111222")
+                .estado(estado)
+                .fechaCreacion(OffsetDateTime.parse("2026-06-21T14:30:00-03:00"))
+                .build();
+    }
+
+    @Test
+    @DisplayName("actualizarEstadoProcesamiento pasa una orden Created a Ready to Delivery")
+    void testActualizarEstadoAReadyToDelivery() {
+        Orden orden = ordenEn(EstadoOrden.Created);
+        when(ordenRepository.findById(1001L)).thenReturn(Optional.of(orden));
+
+        ordenService.actualizarEstadoProcesamiento(1001L, EstadoOrden.ReadyToDelivery);
+
+        assertThat(orden.getEstado()).isEqualTo(EstadoOrden.ReadyToDelivery);
+        verify(ordenRepository).save(orden);
+    }
+
+    @Test
+    @DisplayName("actualizarEstadoProcesamiento pasa una orden Created a No Stock")
+    void testActualizarEstadoANoStock() {
+        Orden orden = ordenEn(EstadoOrden.Created);
+        when(ordenRepository.findById(1001L)).thenReturn(Optional.of(orden));
+
+        ordenService.actualizarEstadoProcesamiento(1001L, EstadoOrden.NoStock);
+
+        assertThat(orden.getEstado()).isEqualTo(EstadoOrden.NoStock);
+    }
+
+    @Test
+    @DisplayName("actualizarEstadoProcesamiento es idempotente si la orden ya tiene ese estado")
+    void testActualizarEstadoIdempotente() {
+        Orden orden = ordenEn(EstadoOrden.ReadyToDelivery);
+        when(ordenRepository.findById(1001L)).thenReturn(Optional.of(orden));
+
+        ordenService.actualizarEstadoProcesamiento(1001L, EstadoOrden.ReadyToDelivery);
+
+        verify(ordenRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("actualizarEstadoProcesamiento lanza TransicionEstadoInvalidaException si la orden ya fue resuelta de otra forma")
+    void testActualizarEstadoTransicionInvalida() {
+        when(ordenRepository.findById(1001L)).thenReturn(Optional.of(ordenEn(EstadoOrden.NoStock)));
+
+        assertThatThrownBy(() -> ordenService.actualizarEstadoProcesamiento(1001L, EstadoOrden.ReadyToDelivery))
+                .isInstanceOf(TransicionEstadoInvalidaException.class)
+                .hasMessage("La orden 1001 no puede pasar de 'No Stock' a 'Ready to Delivery'");
+    }
+
+    @Test
+    @DisplayName("actualizarEstadoProcesamiento rechaza estados que no son resultado de procesamiento")
+    void testActualizarEstadoNoPermitido() {
+        assertThatThrownBy(() -> ordenService.actualizarEstadoProcesamiento(1001L, EstadoOrden.Shipped))
+                .isInstanceOf(EstadoNoPermitidoException.class);
+
+        verify(ordenRepository, never()).findById(anyLong());
+    }
+
+    @Test
+    @DisplayName("actualizarEstadoProcesamiento lanza OrdenNoEncontradaException si la orden no existe")
+    void testActualizarEstadoOrdenInexistente() {
+        when(ordenRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ordenService.actualizarEstadoProcesamiento(9999L, EstadoOrden.NoStock))
+                .isInstanceOf(OrdenNoEncontradaException.class);
     }
 }

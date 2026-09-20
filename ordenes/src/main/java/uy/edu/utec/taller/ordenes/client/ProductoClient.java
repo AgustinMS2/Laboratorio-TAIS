@@ -1,11 +1,9 @@
 package uy.edu.utec.taller.ordenes.client;
 
-import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -53,27 +51,6 @@ public class ProductoClient {
             log.warn("Fallo al consultar el producto {} en el servicio de productos", productoId, ex);
             throw new ProductoServicioException(
                     "No se pudo contactar al servicio de productos", ex);
-        }
-    }
-
-    /**
-     * Ajusta el stock de un producto vía {@code PATCH /api/productos/{id}}.
-     *
-     * @throws ProductoServicioException si el servicio de productos no responde o
-     *         devuelve un error.
-     */
-    public void actualizarStock(Long productoId, int nuevoStock) {
-        try {
-            restClient.patch()
-                    .uri("/api/productos/{id}", productoId)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("stock", nuevoStock))
-                    .retrieve()
-                    .toBodilessEntity();
-        } catch (RestClientException ex) {
-            log.warn("No se pudo actualizar el stock del producto {}", productoId, ex);
-            throw new ProductoServicioException(
-                    "No se pudo actualizar el stock del producto " + productoId, ex);
         }
     }
 }

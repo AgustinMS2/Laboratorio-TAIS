@@ -3,6 +3,8 @@ package uy.edu.utec.taller.ordenes.exception;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -28,6 +30,18 @@ public class GlobalExceptionHandler {
                 .detalles(ex.getDetalles())
                 .build();
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
+    @ExceptionHandler(EstadoDesconocidoException.class)
+    public ResponseEntity<ErrorDTO> manejarEstadoDesconocido(EstadoDesconocidoException ex) {
+        return ResponseEntity.badRequest()
+                .body(ErrorDTO.of(HttpStatus.BAD_REQUEST.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(EstadoNoPermitidoException.class)
+    public ResponseEntity<ErrorDTO> manejarEstadoNoPermitido(EstadoNoPermitidoException ex) {
+        return ResponseEntity.badRequest()
+                .body(ErrorDTO.of(HttpStatus.BAD_REQUEST.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -58,5 +72,21 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_GATEWAY)
                 .body(ErrorDTO.of(HttpStatus.BAD_GATEWAY.value(), ex.getMessage()));
+    }
+
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorDTO> manejarContentTypeNoSoportado(HttpMediaTypeNotSupportedException ex) {
+        return ResponseEntity.badRequest()
+                .body(ErrorDTO.of(HttpStatus.BAD_REQUEST.value(),
+                        "El Content-Type de la solicitud debe ser application/json"));
+    }
+
+    /** Parámetro de ruta o de consulta con un valor de tipo incorrecto (p. ej. un id no numérico). */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorDTO> manejarTipoDeParametroInvalido(MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity.badRequest()
+                .body(ErrorDTO.of(HttpStatus.BAD_REQUEST.value(),
+                        "El parámetro '" + ex.getName() + "' tiene un valor inválido: '" + ex.getValue() + "'"));
     }
 }

@@ -1,0 +1,23 @@
+server:
+  port: 5003
+
+mensajeria:
+  suscriptor:
+    enabled: false   # los tests no dependen de un broker MQTT
+
+spring:
+  application:
+    name: procesamiento
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driverClassName: org.h2.Driver
+    username: sa
+    password: ""
+  docker:
+    compose:
+      enabled: false
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true

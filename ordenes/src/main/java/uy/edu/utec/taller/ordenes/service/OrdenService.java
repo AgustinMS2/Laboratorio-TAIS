@@ -16,9 +16,11 @@ import uy.edu.utec.taller.ordenes.dto.OrdenCreadaDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenCreateDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDTO;
 import uy.edu.utec.taller.ordenes.dto.OrdenDetalleDTO;
+import uy.edu.utec.taller.ordenes.exception.EstadoNoPermitidoException;
 import uy.edu.utec.taller.ordenes.exception.OrdenNoEncontradaException;
 import uy.edu.utec.taller.ordenes.exception.ProductosInexistentesException;
 import uy.edu.utec.taller.ordenes.exception.StockInsuficienteException;
+import uy.edu.utec.taller.ordenes.exception.TransicionEstadoInvalidaException;
 import uy.edu.utec.taller.ordenes.model.EstadoOrden;
 import uy.edu.utec.taller.ordenes.model.LineaOrden;
 import uy.edu.utec.taller.ordenes.model.Orden;
@@ -34,6 +36,14 @@ public class OrdenService {
     @Transactional(readOnly = true)
     public List<OrdenDTO> listarOrdenes() {
         return ordenRepository.findAll()
+                .stream()
+                .map(OrdenDTO::fromEntity)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrdenDTO> listarOrdenesPorEstado(EstadoOrden estado) {
+        return ordenRepository.findByEstadoOrderByIdAsc(estado)
                 .stream()
                 .map(OrdenDTO::fromEntity)
                 .toList();
@@ -87,8 +97,10 @@ public class OrdenService {
     }
 
     /**
-     * Registra una orden en estado {@code Created} y descuenta el stock de cada
-     * producto solicitado en el microservicio de Productos.
+     * Registra una orden en estado {@code Created} tras validar que cada producto existe y
+     * tiene stock suficiente. <b>No descuenta el stock</b>: eso lo hace el servicio de
+     * procesamiento cuando recibe la orden que el servicio publicador toma de aquí (estado Created)
+     * y publica en el broker de mensajería.
      *
      * @throws ProductosInexistentesException si algún producto solicitado no existe (409).
      * @throws StockInsuficienteException si algún producto no tiene stock suficiente (409).
@@ -102,7 +114,6 @@ public class OrdenService {
         }
 
         // 1. Traer cada producto del servicio de Productos y validar existencia y stock.
-        Map<Long, ProductoResponse> productos = new LinkedHashMap<>();
         List<String> inexistentes = new ArrayList<>();
         List<String> sinStock = new ArrayList<>();
 
@@ -112,7 +123,6 @@ public class OrdenService {
                 inexistentes.add("No existe el producto con id " + productoId);
                 return;
             }
-            productos.put(productoId, producto);
             int disponible = producto.getStock() == null ? 0 : producto.getStock();
             if (disponible < cantidad) {
                 sinStock.add("Producto " + productoId + ": stock disponible " + disponible
@@ -142,12 +152,24 @@ public class OrdenService {
                 .build();
         Orden guardada = ordenRepository.save(orden);
 
-        // 3. Descontar el stock en el servicio de Productos.
-        cantidadPorProducto.forEach((productoId, cantidad) -> {
-            int nuevoStock = productos.get(productoId).getStock() - cantidad;
-            productoClient.actualizarStock(productoId, nuevoStock);
-        });
-
         return OrdenCreadaDTO.builder().id(guardada.getId()).build();
+    }
+
+    @Transactional
+    public void actualizarEstadoProcesamiento(Long id, EstadoOrden nuevoEstado) {
+        if (nuevoEstado != EstadoOrden.ReadyToDelivery && nuevoEstado != EstadoOrden.NoStock) {
+            throw new EstadoNoPermitidoException(nuevoEstado);
+        }
+        Orden orden = ordenRepository.findById(id)
+                .orElseThrow(() -> new OrdenNoEncontradaException(id));
+
+        if (orden.getEstado() == nuevoEstado) {
+            return;
+        }
+        if (orden.getEstado() != EstadoOrden.Created) {
+            throw new TransicionEstadoInvalidaException(id, orden.getEstado(), nuevoEstado);
+        }
+        orden.setEstado(nuevoEstado);
+        ordenRepository.save(orden);
     }
 }

@@ -1,0 +1,34 @@
+server:
+  port: 5003
+
+# Servicios que consume el procesador
+ordenes:
+  api:
+    base-url: ${ORDENES_API_BASE_URL:http://localhost:5002}
+productos:
+  api:
+    base-url: ${PRODUCTOS_API_BASE_URL:http://localhost:5001}
+
+# Mensajería (parte 3): se recibe cada orden publicada por el servicio de órdenes en Mosquitto (MQTT)
+mensajeria:
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
+    topic: ${MQTT_TOPIC:ordenes/procesar}
+    qos: 1
+    client-id: procesamiento   # fijo: con sesión persistente el broker retiene los mensajes si estamos caídos
+  suscriptor:
+    enabled: true
+    reconexion-ms: 5000        # cada cuánto se reintenta conectar al broker si no hay conexión
+    reintentos: 3              # intentos ante fallos de otros servicios (backoff: espera-ms x intento)
+    espera-ms: 2000
+
+spring:
+  application:
+    name: procesamiento
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
