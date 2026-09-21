@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "20064c8a-57c8-4188-9b79-fc07ceaa6b71",
     "name": "Laboratorio TAIS - Colección de Pruebas API",
-    "description": "Colección de pruebas de Postman completa para el Laboratorio de Taller de Arquitectura e Integración de Sistemas (TAIS).\n\nIncluye pruebas automáticas sobre:\n- Microservicio de Productos (:5001)\n- Microservicio de Órdenes (:5002)\n- Pruebas E2E de integración (descuento de stock, consistencia de datos, control de conflicto 409)\n- Pruebas de validaciones y respuestas de error (400, 404, 409)\n\nVariables de Colección configuradas por defecto:\n- baseUrlProductos: http://localhost:5001\n- baseUrlOrdenes: http://localhost:5002",
+    "description": "Colección de pruebas de Postman completa para el Laboratorio de Taller de Arquitectura e Integración de Sistemas (TAIS).\n\nIncluye pruebas automáticas sobre:\n- Microservicio de Productos (:5001)\n- Microservicio de Órdenes (:5002)\n- Pruebas E2E de integración (procesamiento asincrónico por MQTT, descuento de stock, consistencia de datos, control de conflicto 409)\n- Parte 3: Procesamiento (:5003) y Publicador (:5004): facturas, registro de procesamientos y publicaciones, PATCH de estado y escenario de falta de stock\n- Pruebas de validaciones y respuestas de error (400, 404, 409)\n\nIMPORTANTE: el descuento de stock ya no ocurre al crear la orden, sino cuando el servicio de procesamiento recibe la orden por MQTT (2-4 s después). Por eso los pasos E2E esperan (con reintentos) a que la orden deje de estar en Created. Ejecutar la colección completa y en orden (Runner / Newman) con el stack levantado.\n\nVariables de Colección configuradas por defecto:\n- baseUrlProductos: http://localhost:5001\n- baseUrlOrdenes: http://localhost:5002\n- baseUrlProcesamiento: http://localhost:5003\n- baseUrlPublicador: http://localhost:5004",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -34,6 +34,61 @@
     {
       "key": "e2eOrdenId",
       "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "baseUrlProcesamiento",
+      "value": "http://localhost:5003",
+      "type": "string"
+    },
+    {
+      "key": "baseUrlPublicador",
+      "value": "http://localhost:5004",
+      "type": "string"
+    },
+    {
+      "key": "e2eIntentos",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "e2eFacturaId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nsProductoId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nsOrdenAId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nsOrdenBId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nsIntentosA",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nsIntentosB",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nsEstadoA",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nsEstadoB",
+      "value": "",
       "type": "string"
     }
   ],
@@ -1003,7 +1058,7 @@
     },
     {
       "name": "3. Pruebas de Integración E2E",
-      "description": "Flujo continuo que crea productos, levanta órdenes, descuenta stock y verifica integridad referencial",
+      "description": "Flujo continuo que crea productos, levanta órdenes, espera su procesamiento asincrónico (MQTT), verifica el descuento de stock y la integridad referencial",
       "item": [
         {
           "name": "3.1 [E2E] Crear producto para prueba de flujo",
@@ -1094,7 +1149,7 @@
           ]
         },
         {
-          "name": "3.3 [E2E] Crear orden consumiendo 4 unidades",
+          "name": "3.3 [E2E] Crear orden consumiendo 4 unidades (queda en Created)",
           "request": {
             "method": "POST",
             "header": [
@@ -1114,7 +1169,7 @@
                 "ordenes"
               ]
             },
-            "description": "Registra una orden solicitando 4 unidades del producto E2E. El microservicio de Órdenes debe descontar el stock en Productos.",
+            "description": "Crea la orden. El stock se valida pero NO se descuenta aqui: el descuento lo hace el servicio de procesamiento cuando recibe la orden por MQTT.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"e2e.tester@email.com\",\n  \"direccionEnvio\": \"Calle Falsa 123, Montevideo\",\n  \"telefono\": \"+59898765432\",\n  \"productos\": [\n    {\n      \"productoId\": \"{{e2eProductoId}}\",\n      \"cantidad\": 4\n    }\n  ]\n}"
@@ -1131,7 +1186,11 @@
                   "    pm.response.to.have.status(201);",
                   "});",
                   "var jsonData = pm.response.json();",
+                  "pm.test('La respuesta trae el id de la orden creada', function () {",
+                  "    pm.expect(jsonData.id).to.be.a(\"number\");",
+                  "});",
                   "pm.collectionVariables.set('e2eOrdenId', jsonData.id);",
+                  "pm.collectionVariables.set('e2eIntentos', 0);",
                   "console.log('E2E Orden creada: ' + jsonData.id);"
                 ]
               }
@@ -1139,7 +1198,69 @@
           ]
         },
         {
-          "name": "3.4 [E2E] Verificar descuento automático de stock (Stock = 6)",
+          "name": "3.4 [E2E] Esperar el procesamiento asincronico de la orden (Ready to Delivery)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{e2eOrdenId}}",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{e2eOrdenId}}"
+              ]
+            },
+            "description": "El publicador toma la orden en Created y la publica en Mosquitto; el servicio de procesamiento la recibe, descuenta el stock, genera la factura y actualiza el estado. Esta peticion se repite (cada ~1.5 s, hasta 30 veces) hasta que la orden deja de estar en Created."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Pausa entre consultas para dar tiempo al publicador y al procesamiento (asincronos)",
+                  "var hasta = Date.now() + 1500;",
+                  "while (Date.now() < hasta) { /* espera */ }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var intentos = parseInt(pm.collectionVariables.get('e2eIntentos') || '0', 10) + 1;",
+                  "pm.collectionVariables.set('e2eIntentos', intentos);",
+                  "if (jsonData.estado === 'Created' && intentos < 30) {",
+                  "    // Todavia no fue procesada: se vuelve a consultar esta misma peticion",
+                  "    postman.setNextRequest(\"3.4 [E2E] Esperar el procesamiento asincronico de la orden (Ready to Delivery)\");",
+                  "} else {",
+                  "    pm.collectionVariables.set('e2eIntentos', 0);",
+                  "    pm.test('La orden fue procesada: estado Ready to Delivery', function () {",
+                  "        pm.expect(jsonData.estado).to.eql('Ready to Delivery');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 [E2E] Verificar descuento automático de stock (Stock = 6)",
           "request": {
             "method": "GET",
             "header": [
@@ -1160,7 +1281,7 @@
                 "{{e2eProductoId}}"
               ]
             },
-            "description": "Verifica que en el microservicio de Productos el stock se haya reducido de 10 a 6 tras la creación de la orden."
+            "description": "Una vez procesada la orden, el stock del producto pasa de 10 a 6."
           },
           "response": [],
           "event": [
@@ -1182,7 +1303,7 @@
           ]
         },
         {
-          "name": "3.5 [E2E] Verificar detalle y cálculos de la orden (4 x 150 = 600)",
+          "name": "3.6 [E2E] Verificar detalle y cálculos de la orden (4 x 150 = 600)",
           "request": {
             "method": "GET",
             "header": [
@@ -1232,7 +1353,7 @@
           ]
         },
         {
-          "name": "3.6 [E2E] Intentar pedir 10 unidades (disponibles 6) -> Conflicto 409",
+          "name": "3.7 [E2E] Intentar pedir 10 unidades (disponibles 6) -> Conflicto 409",
           "request": {
             "method": "POST",
             "header": [
@@ -1280,7 +1401,7 @@
           ]
         },
         {
-          "name": "3.7 [E2E] Verificar que el stock no fue alterado tras el fallo",
+          "name": "3.8 [E2E] Verificar que el stock no fue alterado tras el fallo",
           "request": {
             "method": "GET",
             "header": [
@@ -1317,6 +1438,969 @@
                   "pm.test('El stock se mantiene en 6', function () {",
                   "    pm.expect(jsonData.stock).to.eql(6);",
                   "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Parte 3 - Mensajería MQTT, Procesamiento y Facturación",
+      "description": "Verifica lo que ocurre a partir del mensaje publicado en Mosquitto: filtro de órdenes por estado, facturas, registro de procesamientos, registro del publicador, actualización de estado de la orden y el escenario de falta de stock. Requiere haber ejecutado antes la carpeta 3 (usa la orden E2E) y el stack completo levantado (levantar.ps1 / levantar.sh).",
+      "item": [
+        {
+          "name": "4.1 Listar órdenes por estado (Created)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes?estado=Created",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "Created"
+                }
+              ]
+            },
+            "description": "Filtro que usa el publicador para obtener las órdenes pendientes de procesar."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Devuelve un arreglo y todas las órdenes están en Created', function () {",
+                  "    pm.expect(jsonData).to.be.an(\"array\");",
+                  "    jsonData.forEach(function (o) { pm.expect(o.estado).to.eql('Created'); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 Listar órdenes por estado (Ready to Delivery) incluye la orden E2E",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes?estado=Ready to Delivery",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "Ready to Delivery"
+                }
+              ]
+            },
+            "description": "La orden del flujo E2E ya fue procesada y debe aparecer en este estado."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Todas las órdenes están en Ready to Delivery', function () {",
+                  "    jsonData.forEach(function (o) { pm.expect(o.estado).to.eql('Ready to Delivery'); });",
+                  "});",
+                  "pm.test('Incluye la orden del flujo E2E', function () {",
+                  "    var id = parseInt(pm.collectionVariables.get('e2eOrdenId'), 10);",
+                  "    pm.expect(jsonData.map(function (o) { return o.id; })).to.include(id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Error 400 - Estado desconocido en el filtro",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes?estado=Inexistente",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "Inexistente"
+                }
+              ]
+            },
+            "description": "Un estado que no existe en el enum se rechaza con 400."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Cuerpo de error con codigo y mensaje', function () {",
+                  "    pm.expect(jsonData.codigo).to.eql(400);",
+                  "    pm.expect(jsonData.mensaje).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 [Procesamiento] Factura de la orden E2E (filtro por ordenId)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProcesamiento}}/api/facturas?ordenId={{e2eOrdenId}}",
+              "host": [
+                "{{baseUrlProcesamiento}}"
+              ],
+              "path": [
+                "api",
+                "facturas"
+              ],
+              "query": [
+                {
+                  "key": "ordenId",
+                  "value": "{{e2eOrdenId}}"
+                }
+              ]
+            },
+            "description": "La orden procesada con éxito genera exactamente una factura, con total = suma de los subtotales."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Existe exactamente una factura para la orden', function () {",
+                  "    pm.expect(jsonData).to.be.an(\"array\").with.lengthOf(1);",
+                  "});",
+                  "var f = jsonData[0];",
+                  "pm.collectionVariables.set('e2eFacturaId', f.id);",
+                  "pm.test('La factura tiene los datos de la orden y total 600', function () {",
+                  "    pm.expect(f.ordenId).to.eql(parseInt(pm.collectionVariables.get('e2eOrdenId'), 10));",
+                  "    pm.expect(f.email).to.eql('e2e.tester@email.com');",
+                  "    pm.expect(f.total).to.eql(600);",
+                  "    pm.expect(f.items).to.be.an(\"array\").with.lengthOf(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 [Procesamiento] Obtener factura por ID (ítems y cálculos)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProcesamiento}}/api/facturas/{{e2eFacturaId}}",
+              "host": [
+                "{{baseUrlProcesamiento}}"
+              ],
+              "path": [
+                "api",
+                "facturas",
+                "{{e2eFacturaId}}"
+              ]
+            },
+            "description": "Detalle de la factura: un ítem por producto con descripción, cantidad, precio unitario y subtotal."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('El ítem de la factura es correcto', function () {",
+                  "    var it = jsonData.items[0];",
+                  "    pm.expect(it.productoId).to.eql(parseInt(pm.collectionVariables.get('e2eProductoId'), 10));",
+                  "    pm.expect(it.descripcion).to.eql('Teclado Mecánico RGB E2E');",
+                  "    pm.expect(it.cantidad).to.eql(4);",
+                  "    pm.expect(it.precioUnitario).to.eql(150);",
+                  "    pm.expect(it.subtotal).to.eql(600);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 [Procesamiento] Error 404 - Factura inexistente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProcesamiento}}/api/facturas/999999",
+              "host": [
+                "{{baseUrlProcesamiento}}"
+              ],
+              "path": [
+                "api",
+                "facturas",
+                "999999"
+              ]
+            },
+            "description": "Una factura que no existe devuelve 404."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Cuerpo de error con codigo 404', function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.7 [Procesamiento] Registro de procesamiento de la orden E2E",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProcesamiento}}/api/procesamientos",
+              "host": [
+                "{{baseUrlProcesamiento}}"
+              ],
+              "path": [
+                "api",
+                "procesamientos"
+              ]
+            },
+            "description": "Cada orden procesada queda registrada una sola vez (idempotencia) con su resultado."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var id = parseInt(pm.collectionVariables.get('e2eOrdenId'), 10);",
+                  "var propios = jsonData.filter(function (p) { return p.ordenId === id; });",
+                  "pm.test('La orden E2E fue procesada una única vez', function () {",
+                  "    pm.expect(propios).to.have.lengthOf(1);",
+                  "});",
+                  "pm.test('Resultado Ready to Delivery informado a Órdenes', function () {",
+                  "    pm.expect(propios[0].resultado).to.eql('Ready to Delivery');",
+                  "    pm.expect(propios[0].ordenActualizada).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.8 [Publicador] Registro de publicaciones incluye la orden E2E",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlPublicador}}/api/publicaciones",
+              "host": [
+                "{{baseUrlPublicador}}"
+              ],
+              "path": [
+                "api",
+                "publicaciones"
+              ]
+            },
+            "description": "El publicador registra qué órdenes publicó en el broker y cuántas veces."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var id = parseInt(pm.collectionVariables.get('e2eOrdenId'), 10);",
+                  "pm.test('La orden E2E fue publicada al menos una vez', function () {",
+                  "    var p = jsonData.filter(function (x) { return x.ordenId === id; })[0];",
+                  "    pm.expect(p).to.not.equal(undefined);",
+                  "    pm.expect(p.veces).to.be.at.least(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.9 PATCH estado - Repetir el mismo resultado es idempotente (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{e2eOrdenId}}/estado",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{e2eOrdenId}}",
+                "estado"
+              ]
+            },
+            "description": "Informar de nuevo el mismo resultado no falla ni cambia nada (el procesador puede reintentar).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"Ready to Delivery\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('El mensaje confirma Ready to Delivery', function () {",
+                  "    pm.expect(pm.response.json().mensaje).to.include('Ready to Delivery');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.10 Error 409 - PATCH estado con un resultado contradictorio",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{e2eOrdenId}}/estado",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{e2eOrdenId}}",
+                "estado"
+              ]
+            },
+            "description": "Una orden ya procesada como Ready to Delivery no puede pasar a No Stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"No Stock\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.11 Error 400 - PATCH estado con un estado no permitido",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{e2eOrdenId}}/estado",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{e2eOrdenId}}",
+                "estado"
+              ]
+            },
+            "description": "Solo se aceptan los resultados del procesamiento (Ready to Delivery / No Stock).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"Shipped\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.12 Error 400 - PATCH estado sin cuerpo válido",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{e2eOrdenId}}/estado",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{e2eOrdenId}}",
+                "estado"
+              ]
+            },
+            "description": "El campo estado es obligatorio.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.13 Error 404 - PATCH estado de una orden inexistente",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/999999/estado",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "999999",
+                "estado"
+              ]
+            },
+            "description": "La orden no existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"Ready to Delivery\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.14 [Escenario No Stock] Crear producto con stock 5",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos"
+              ]
+            },
+            "description": "Producto con stock 5 para que dos órdenes de 5 unidades compitan por él.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Mouse Gamer Escenario NoStock\",\n  \"descripcion\": \"Producto para el escenario de falta de stock\",\n  \"precioUnitario\": 20,\n  \"stock\": 5,\n  \"imagenes\": [\n    \"https://cdn.local/img/mouse-ns.jpg\"\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set('nsProductoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.15 [Escenario No Stock] Crear la orden A (5 unidades)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "Al crearla hay stock suficiente (5), por lo que se acepta y queda en Created.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"e2e.tester@email.com\",\n  \"direccionEnvio\": \"Calle Falsa 123, Montevideo\",\n  \"telefono\": \"+59898765432\",\n  \"productos\": [\n    {\n      \"productoId\": \"{{nsProductoId}}\",\n      \"cantidad\": 5\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set('nsOrdenAId', pm.response.json().id);",
+                  "pm.collectionVariables.set('nsIntentosA', 0);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.16 [Escenario No Stock] Crear la orden B (5 unidades)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes"
+              ]
+            },
+            "description": "El stock todavía no se descontó (es asincrónico), así que la orden B también se acepta: una de las dos terminará en No Stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"e2e.tester@email.com\",\n  \"direccionEnvio\": \"Calle Falsa 123, Montevideo\",\n  \"telefono\": \"+59898765432\",\n  \"productos\": [\n    {\n      \"productoId\": \"{{nsProductoId}}\",\n      \"cantidad\": 5\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set('nsOrdenBId', pm.response.json().id);",
+                  "pm.collectionVariables.set('nsIntentosB', 0);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.17 [Escenario No Stock] Esperar el procesamiento de la orden A",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{nsOrdenAId}}",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{nsOrdenAId}}"
+              ]
+            },
+            "description": "Se repite hasta que la orden A deja de estar en Created."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var hasta = Date.now() + 1500;",
+                  "while (Date.now() < hasta) { /* espera */ }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var intentos = parseInt(pm.collectionVariables.get('nsIntentosA') || '0', 10) + 1;",
+                  "pm.collectionVariables.set('nsIntentosA', intentos);",
+                  "if (jsonData.estado === 'Created' && intentos < 30) {",
+                  "    postman.setNextRequest(\"4.17 [Escenario No Stock] Esperar el procesamiento de la orden A\");",
+                  "} else {",
+                  "    pm.collectionVariables.set('nsIntentosA', 0);",
+                  "    pm.collectionVariables.set('nsEstadoA', jsonData.estado);",
+                  "    pm.test('La orden fue procesada (dejo de estar en Created)', function () {",
+                  "        pm.expect(['Ready to Delivery', 'No Stock']).to.include(jsonData.estado);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.18 [Escenario No Stock] Esperar el procesamiento de la orden B",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlOrdenes}}/api/ordenes/{{nsOrdenBId}}",
+              "host": [
+                "{{baseUrlOrdenes}}"
+              ],
+              "path": [
+                "api",
+                "ordenes",
+                "{{nsOrdenBId}}"
+              ]
+            },
+            "description": "Se repite hasta que la orden B deja de estar en Created."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var hasta = Date.now() + 1500;",
+                  "while (Date.now() < hasta) { /* espera */ }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var intentos = parseInt(pm.collectionVariables.get('nsIntentosB') || '0', 10) + 1;",
+                  "pm.collectionVariables.set('nsIntentosB', intentos);",
+                  "if (jsonData.estado === 'Created' && intentos < 30) {",
+                  "    postman.setNextRequest(\"4.18 [Escenario No Stock] Esperar el procesamiento de la orden B\");",
+                  "} else {",
+                  "    pm.collectionVariables.set('nsIntentosB', 0);",
+                  "    pm.collectionVariables.set('nsEstadoB', jsonData.estado);",
+                  "    pm.test('La orden fue procesada (dejo de estar en Created)', function () {",
+                  "        pm.expect(['Ready to Delivery', 'No Stock']).to.include(jsonData.estado);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.19 [Escenario No Stock] Una orden queda Ready to Delivery y la otra No Stock",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProductos}}/api/productos/{{nsProductoId}}",
+              "host": [
+                "{{baseUrlProductos}}"
+              ],
+              "path": [
+                "api",
+                "productos",
+                "{{nsProductoId}}"
+              ]
+            },
+            "description": "Con stock 5 solo se puede atender una de las dos órdenes de 5 unidades; el stock queda en 0 (nunca negativo)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var estados = [pm.collectionVariables.get('nsEstadoA'), pm.collectionVariables.get('nsEstadoB')].sort();",
+                  "pm.test('Una orden Ready to Delivery y la otra No Stock', function () {",
+                  "    pm.expect(estados).to.eql(['No Stock', 'Ready to Delivery']);",
+                  "});",
+                  "pm.test('El stock quedó en 0 (descontado una sola vez)', function () {",
+                  "    pm.expect(pm.response.json().stock).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.20 [Escenario No Stock] Solo la orden atendida tiene factura",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrlProcesamiento}}/api/facturas",
+              "host": [
+                "{{baseUrlProcesamiento}}"
+              ],
+              "path": [
+                "api",
+                "facturas"
+              ]
+            },
+            "description": "La orden en No Stock no se factura."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var facturas = pm.response.json();",
+                  "var a = parseInt(pm.collectionVariables.get('nsOrdenAId'), 10);",
+                  "var b = parseInt(pm.collectionVariables.get('nsOrdenBId'), 10);",
+                  "var okId = pm.collectionVariables.get('nsEstadoA') === 'Ready to Delivery' ? a : b;",
+                  "var noId = okId === a ? b : a;",
+                  "var ids = facturas.map(function (f) { return f.ordenId; });",
+                  "pm.test('La orden atendida tiene factura', function () { pm.expect(ids).to.include(okId); });",
+                  "pm.test('La orden sin stock no tiene factura', function () { pm.expect(ids).to.not.include(noId); });"
                 ]
               }
             }
