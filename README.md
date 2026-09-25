@@ -131,6 +131,27 @@ microservicio (el navegador usa un único origen, por eso no hace falta CORS).
 - **Productos** (opcional): tabla con Id, Nombre, Descripción, Precio unitario y Stock. Al hacer clic
   en un producto se ven sus imágenes.
 
+### Decisiones de diseño (parte 4)
+
+- **Pipeline que solo copia.** La letra pide copiar la nueva versión a otro folder "donde
+  posteriormente serán testeados y desplegados", así que el pipeline se limita a validar el origen,
+  copiar y verificar la copia. El test y el despliegue son etapas posteriores.
+- **Carpetas como volúmenes.** `jenkins/origen` y `jenkins/destino` están montadas dentro del contenedor
+  (`/origen` y `/destino`): el código se deja y se recoge desde el host sin entrar a Jenkins.
+- **Job precargado.** El `Dockerfile` de Jenkins instala el plugin de Pipeline y carga el job al arrancar,
+  por lo que no hay que crearlo a mano ni pasar por el asistente de instalación.
+- **Jenkins sin login.** Simplifica el laboratorio y la defensa. No es apto para producción, donde habría
+  que activar autenticación.
+- **Web en HTML + JavaScript plano con nginx.** No necesita build ni dependencias, la imagen es mínima y
+  es fácil de incluir en el `docker-compose.yml`.
+- **nginx como proxy de las APIs.** El navegador llama a un único origen (`/api/...`), por eso no hizo
+  falta habilitar CORS ni modificar los microservicios.
+- **Orden de las órdenes en la web.** La letra pide que la tabla se vea de la más reciente a la más
+  antigua; se ordena en la interfaz para no cambiar el contrato de `GET /api/ordenes`, del que dependen
+  los tests y el publicador.
+- **Productos (opcional).** Se incluyó porque reutiliza la misma web y `GET /api/productos`. Las imágenes
+  de ejemplo apuntan a URLs ficticias, por lo que se ve la dirección en lugar de la imagen.
+
 ## APIs REST
 
 La especificación completa está en [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0.3, validada).
