@@ -1,4 +1,4 @@
-# Laboratorio IISS – Partes 2 y 3
+# Laboratorio IISS – Partes 2, 3 y 4
 
 Aplicación para dar soporte a la operativa de un local de venta de artículos, que
 vende de forma presencial y también recibe pedidos por la Web.
@@ -99,6 +99,38 @@ Límite conocido: si el proceso `procesamiento` se cae exactamente entre el desc
 guardado de la factura, el reintento descontaría de nuevo. Es la ventana de cualquier flujo sin
 transacción distribuida (2PC/saga completa), fuera del alcance del laboratorio.
 
+## Parte 4 – Jenkins y interfaz web
+
+Todo corre en contenedores (`docker compose up --build`).
+
+### Pipeline de Jenkins — `http://localhost:8080`
+
+El job **`copiar-nueva-version`** (ya cargado al iniciar Jenkins, sin login) copia una nueva versión del
+sistema desde el folder donde está el código fuente descargado hacia el folder donde luego será
+testeado y desplegado. Su definición está en [`jenkins/Jenkinsfile`](jenkins/Jenkinsfile).
+
+| Carpeta en el host   | Dentro de Jenkins | Uso                                              |
+|----------------------|-------------------|--------------------------------------------------|
+| `jenkins/origen/`    | `/origen`         | Código fuente de la nueva versión (ya descargado) |
+| `jenkins/destino/`   | `/destino`        | Aquí se copia la versión, lista para test/deploy  |
+
+Etapas: **Validar origen** (existe y no está vacío) → **Copiar nueva versión** (deja el destino limpio y
+copia todo) → **Verificar copia** (`diff -rq` entre origen y destino).
+
+Uso: copiar el código a `jenkins/origen/`, abrir Jenkins, entrar al job y elegir **Construir ahora**.
+El resultado queda en `jenkins/destino/`.
+
+### Interfaz web — `http://localhost:8081`
+
+Servida por nginx, que además reenvía `/api/ordenes`, `/api/productos` y `/api/facturas` a cada
+microservicio (el navegador usa un único origen, por eso no hace falta CORS).
+
+- **Órdenes** (obligatoria): tabla con Id, Email, Teléfono, Status y Fecha de creación, de la más
+  reciente a la más antigua. Al hacer clic en una orden se ve el detalle de sus productos; si está en
+  `Ready to Delivery` también se ve el detalle de la facturación (ítems, precio unitario y total).
+- **Productos** (opcional): tabla con Id, Nombre, Descripción, Precio unitario y Stock. Al hacer clic
+  en un producto se ven sus imágenes.
+
 ## APIs REST
 
 La especificación completa está en [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0.3, validada).
@@ -167,6 +199,8 @@ Ejemplo de factura:
 .
 ├── openapi.yaml                  # Especificación OpenAPI 3.0 (Productos + Órdenes + Publicador + Procesamiento)
 ├── docker-compose.yml            # Orquesta todo en contenedores (4 apps + 3 MySQL + Mosquitto)
+├── web/                          # Parte 4: interfaz web (index.html + nginx + Dockerfile)
+├── jenkins/                      # Parte 4: Jenkins (Dockerfile, Jenkinsfile, job, carpetas origen/destino)
 ├── MER_Laboratorio_TAIS.pdf      # Diagrama MER actualizado (partes 2 y 3)
 ├── levantar.ps1 / levantar.cmd   # Levanta todo lo necesario para probar en Windows (Docker, imágenes, servicios, pruebas)
 ├── levantar.sh                   # Lo mismo para Linux y macOS
@@ -234,7 +268,7 @@ estático `fromEntity`) y la misma configuración de build y de tests.
 ## Requisitos
 
 - **Docker** con Compose v2 (Docker Desktop en Windows y macOS; Docker Engine en Linux).
-- Puertos libres: `5001` a `5004` (servicios) y `1883` (Mosquitto).
+- Puertos libres: `5001` a `5004` (servicios), `1883` (Mosquitto), `8081` (web) y `8080` (Jenkins).
 - Para desarrollo local sin Docker: **JDK 21** (los `pom.xml` fijan `<java.version>21</java.version>`).
   No hace falta instalar Maven: cada módulo trae el wrapper (`./mvnw`).
 
@@ -381,4 +415,6 @@ cada orden deje de estar en `Created`.
 | Especificación OpenAPI (YAML)       | `openapi.yaml`                                                   |
 | Código fuente                       | `productos/`, `ordenes/`, `publicador/`, `procesamiento/`, `mosquitto/` |
 | `docker-compose.yml`                | raíz del repositorio                                             |
+| Pipeline de Jenkins                 | [`jenkins/Jenkinsfile`](jenkins/Jenkinsfile) y `jenkins/jobs/copiar-nueva-version/config.xml` |
+| Interfaz web                        | `web/`                                                           |
 | Script de invocaciones (curl)       | [`test_apis.sh`](test_apis.sh)                                   |

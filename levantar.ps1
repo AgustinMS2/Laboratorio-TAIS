@@ -47,14 +47,16 @@ $Root = $PSScriptRoot
 Set-Location $Root
 
 # Orden de construccion de imagenes (una por una)
-$ServiciosApp = @('productos', 'ordenes', 'publicador', 'procesamiento')
+$ServiciosApp = @('productos', 'ordenes', 'publicador', 'procesamiento', 'web', 'jenkins')
 
 # Endpoint que se consulta para saber si cada servicio ya responde
 $Servicios = @(
     @{ Nombre = 'productos';     Puerto = 5001; Url = 'http://localhost:5001/api/productos' },
     @{ Nombre = 'ordenes';       Puerto = 5002; Url = 'http://localhost:5002/api/ordenes' },
     @{ Nombre = 'procesamiento'; Puerto = 5003; Url = 'http://localhost:5003/api/facturas' },
-    @{ Nombre = 'publicador';    Puerto = 5004; Url = 'http://localhost:5004/api/publicaciones' }
+    @{ Nombre = 'publicador';    Puerto = 5004; Url = 'http://localhost:5004/api/publicaciones' },
+    @{ Nombre = 'web';           Puerto = 8081; Url = 'http://localhost:8081/' },
+    @{ Nombre = 'jenkins';       Puerto = 8080; Url = 'http://localhost:8080/login' }
 )
 
 function Titulo($texto) { Write-Host ""; Write-Host "== $texto" -ForegroundColor Cyan }
@@ -213,6 +215,8 @@ Write-Host '  productos       http://localhost:5001/api/productos'
 Write-Host '  ordenes         http://localhost:5002/api/ordenes'
 Write-Host '  procesamiento   http://localhost:5003/api/facturas   (tambien /api/procesamientos)'
 Write-Host '  publicador      http://localhost:5004/api/publicaciones'
+Write-Host '  web             http://localhost:8081   (ordenes y productos)'
+Write-Host '  jenkins         http://localhost:8080   (job: copiar-nueva-version)'
 Write-Host '  mosquitto       tcp://localhost:1883   (topico ordenes/procesar)'
 Write-Host ''
 Write-Host '  Ejemplos:' -ForegroundColor Cyan

@@ -41,7 +41,7 @@ DOWN=false
 TIMEOUT=300
 
 # Orden de construccion de imagenes (una por una)
-SERVICIOS_APP="productos ordenes publicador procesamiento"
+SERVICIOS_APP="productos ordenes publicador procesamiento web jenkins"
 
 # nombre|puerto|url que se consulta para saber si el servicio ya responde
 SERVICIOS=(
@@ -49,6 +49,8 @@ SERVICIOS=(
     "ordenes|5002|http://localhost:5002/api/ordenes"
     "procesamiento|5003|http://localhost:5003/api/facturas"
     "publicador|5004|http://localhost:5004/api/publicaciones"
+    "web|8081|http://localhost:8081/"
+    "jenkins|8080|http://localhost:8080/login"
 )
 
 # ---------------------------------------------------------------- utilidades
@@ -242,6 +244,8 @@ cat <<'EOF'
   ordenes         http://localhost:5002/api/ordenes
   procesamiento   http://localhost:5003/api/facturas   (tambien /api/procesamientos)
   publicador      http://localhost:5004/api/publicaciones
+  web             http://localhost:8081   (ordenes y productos)
+  jenkins         http://localhost:8080   (job: copiar-nueva-version)
   mosquitto       tcp://localhost:1883   (topico ordenes/procesar)
 
   Ejemplos:
