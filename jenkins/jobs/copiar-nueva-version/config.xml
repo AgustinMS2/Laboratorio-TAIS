@@ -1,0 +1,64 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>Copia una nueva version del sistema desde el folder de origen (/origen) al folder de destino (/destino), donde luego sera testeada y desplegada.</description>
+  <keepDependencies>false</keepDependencies>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>// Pipeline de la Parte 4 (Jenkins): copia una nueva version del sistema
+// desde el folder donde esta el codigo fuente ya descargado (ORIGEN)
+// hacia el folder donde luego sera testeado y desplegado (DESTINO).
+//
+// Dentro del contenedor de Jenkins los folders estan montados en:
+//   /origen  -&gt; ./jenkins/origen  (en el host)
+//   /destino -&gt; ./jenkins/destino (en el host)
+pipeline {
+    agent any
+
+    environment {
+        ORIGEN  = '/origen'
+        DESTINO = '/destino'
+    }
+
+    stages {
+        stage('Validar origen') {
+            steps {
+                sh '''
+                    test -d "$ORIGEN" || { echo "No existe el folder de origen: $ORIGEN"; exit 1; }
+                    test -n "$(ls -A "$ORIGEN" | grep -v '^.gitkeep$')" || { echo "El folder de origen esta vacio: $ORIGEN"; exit 1; }
+                    test -d "$DESTINO" || mkdir -p "$DESTINO"
+                    echo "Origen:  $ORIGEN"
+                    echo "Destino: $DESTINO"
+                '''
+            }
+        }
+
+        stage('Copiar nueva version') {
+            steps {
+                sh '''
+                    # Deja el destino limpio para que quede exactamente la nueva version
+                    find "$DESTINO" -mindepth 1 -delete
+                    cp -a "$ORIGEN"/. "$DESTINO"/
+                '''
+            }
+        }
+
+        stage('Verificar copia') {
+            steps {
+                sh '''
+                    diff -rq "$ORIGEN" "$DESTINO" &amp;&amp; echo "Copia verificada: origen y destino son identicos"
+                    echo "Archivos copiados: $(find "$DESTINO" -type f | wc -l)"
+                '''
+            }
+        }
+    }
+
+    post {
+        success { echo 'Nueva version copiada; lista para ser testeada y desplegada.' }
+        failure { echo 'La copia fallo: revisar el log de la etapa anterior.' }
+    }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

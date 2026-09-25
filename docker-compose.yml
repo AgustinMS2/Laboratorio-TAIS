@@ -9,6 +9,8 @@ name: laboratorio-tais
 #   - ordenes             : API REST de ordenes        (http://localhost:5002)
 #   - publicador          : publica en el broker las ordenes listas para procesar (http://localhost:5004)
 #   - procesamiento       : recibe las ordenes del broker, las procesa y las factura (http://localhost:5003)
+#   - web                 : interfaz web de ordenes y productos (http://localhost:8081)
+#   - jenkins             : pipeline que copia una nueva version del codigo (http://localhost:8080)
 #
 # Uso:
 #   docker compose up --build
@@ -159,7 +161,34 @@ services:
     networks:
       - backend
 
+  web:
+    build:
+      context: ./web
+    ports:
+      - "8081:80"
+    depends_on:
+      - ordenes
+      - productos
+      - procesamiento
+    networks:
+      - backend
+
+  # Jenkins: el pipeline "copiar-nueva-version" copia el codigo de ./jenkins/origen a ./jenkins/destino
+  jenkins:
+    build:
+      context: ./jenkins
+    user: root
+    ports:
+      - "8080:8080"
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      - ./jenkins/origen:/origen
+      - ./jenkins/destino:/destino
+    networks:
+      - backend
+
 volumes:
+  jenkins-home:
   mysql-productos-data:
   mysql-ordenes-data:
   mysql-procesamiento-data:

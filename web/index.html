@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local de ventas</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --line:#e2e5ea; --text:#1f2933; --muted:#6b7683; --accent:#2f6fed; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:0 24px; display:flex; align-items:center; gap:24px; }
+  header h1 { font-size:18px; margin:16px 0; }
+  nav button { background:none; border:0; padding:18px 12px; font-size:15px; cursor:pointer; color:var(--muted); border-bottom:3px solid transparent; }
+  nav button.active { color:var(--accent); border-color:var(--accent); font-weight:600; }
+  main { max-width:1000px; margin:24px auto; padding:0 16px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--line); font-size:14px; }
+  th { background:#fafbfc; color:var(--muted); font-weight:600; }
+  tbody tr.fila { cursor:pointer; }
+  tbody tr.fila:hover { background:#f0f5ff; }
+  tr.detalle > td { background:#fafbfc; padding:16px 20px; }
+  .badge { padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; background:#e8ebf0; }
+  .badge.Ready { background:#d9f5e3; color:#146c3a; }
+  .badge.NoStock { background:#fde2e2; color:#a12727; }
+  .badge.Created { background:#e0ebff; color:#1c4fb5; }
+  h3 { margin:0 0 8px; font-size:14px; }
+  .sub { width:100%; margin-bottom:14px; }
+  .estado { color:var(--muted); padding:24px; text-align:center; }
+  .error { color:#a12727; }
+  .imgs { display:flex; flex-wrap:wrap; gap:12px; }
+  .imgs figure { margin:0; width:180px; }
+  .imgs img { width:100%; height:120px; object-fit:cover; border-radius:6px; background:#e8ebf0; }
+  .imgs figcaption { font-size:11px; color:var(--muted); word-break:break-all; margin-top:4px; }
+  .total { text-align:right; font-weight:700; }
+  button.refresh { margin-left:auto; padding:6px 14px; border:1px solid var(--line); background:var(--card); border-radius:6px; cursor:pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Local de ventas</h1>
+  <nav>
+    <button id="tab-ordenes" class="active">Órdenes</button>
+    <button id="tab-productos">Productos</button>
+  </nav>
+  <button class="refresh" id="refresh">Actualizar</button>
+</header>
+<main id="contenido"></main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dinero = (n) => Number(n).toLocaleString("es-UY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fecha = (f) => f ? new Date(f).toLocaleString("es-UY") : "-";
+const claseEstado = (e) => String(e).replace(/\s/g, "").replace("ReadytoDelivery", "Ready");
+
+async function api(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url} respondió ${r.status}`);
+  return r.json();
+}
+
+let vista = "ordenes";
+
+function mostrarTab(nombre) {
+  vista = nombre;
+  $("#tab-ordenes").classList.toggle("active", nombre === "ordenes");
+  $("#tab-productos").classList.toggle("active", nombre === "productos");
+  cargar();
+}
+
+async function cargar() {
+  const cont = $("#contenido");
+  cont.innerHTML = '<div class="estado">Cargando…</div>';
+  try {
+    if (vista === "ordenes") renderOrdenes(await api("/api/ordenes"));
+    else renderProductos(await api("/api/productos"));
+  } catch (e) {
+    cont.innerHTML = `<div class="estado error">No se pudo cargar: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- Órdenes ---------- */
+function renderOrdenes(ordenes) {
+  // Más reciente primero (fecha de creación; el id desempata)
+  ordenes.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion) || b.id - a.id);
+  if (!ordenes.length) { $("#contenido").innerHTML = '<div class="estado">No hay órdenes.</div>'; return; }
+  $("#contenido").innerHTML = `
+    <table>
+      <thead><tr><th>Id</th><th>Email</th><th>Teléfono</th><th>Status</th><th>Fecha creación</th></tr></thead>
+      <tbody>${ordenes.map((o) => `
+        <tr class="fila" data-id="${o.id}" data-estado="${esc(o.estado)}">
+          <td>${o.id}</td><td>${esc(o.email)}</td><td>${esc(o.telefono)}</td>
+          <td><span class="badge ${claseEstado(o.estado)}">${esc(o.estado)}</span></td>
+          <td>${fecha(o.fechaCreacion)}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+  document.querySelectorAll("tr.fila").forEach((tr) =>
+    tr.addEventListener("click", () => alternarDetalleOrden(tr)));
+}
+
+async function alternarDetalleOrden(tr) {
+  const siguiente = tr.nextElementSibling;
+  if (siguiente && siguiente.classList.contains("detalle")) { siguiente.remove(); return; }
+  const fila = document.createElement("tr");
+  fila.className = "detalle";
+  fila.innerHTML = '<td colspan="5"><div class="estado">Cargando detalle…</div></td>';
+  tr.after(fila);
+  const td = fila.firstElementChild;
+  try {
+    const id = tr.dataset.id;
+    const detalle = await api(`/api/ordenes/${id}/detalle`);
+    let html = `<h3>Productos de la orden #${id} · ${esc(detalle.direccionEnvio)}</h3>
+      <table class="sub"><thead><tr><th>Producto</th><th>Cantidad</th><th>Precio unitario</th><th>Subtotal</th></tr></thead><tbody>
+      ${detalle.productos.map((l) => `<tr>
+        <td>${esc(l.producto?.nombre ?? "-")}</td><td>${l.cantidad}</td>
+        <td>${l.producto ? dinero(l.producto.precioUnitario) : "-"}</td><td>${dinero(l.subtotal)}</td></tr>`).join("")}
+      </tbody></table>`;
+    if (tr.dataset.estado === "Ready to Delivery") html += await htmlFactura(id);
+    td.innerHTML = html;
+  } catch (e) {
+    td.innerHTML = `<div class="estado error">No se pudo cargar el detalle: ${esc(e.message)}</div>`;
+  }
+}
+
+async function htmlFactura(ordenId) {
+  try {
+    const facturas = await api(`/api/facturas?ordenId=${ordenId}`);
+    if (!facturas.length) return '<h3>Facturación</h3><div class="estado">Todavía no hay factura para esta orden.</div>';
+    const f = facturas[0];
+    return `<h3>Facturación · factura #${f.id} · ${fecha(f.fecha)}</h3>
+      <table class="sub"><thead><tr><th>Producto</th><th>Cantidad</th><th>Precio unitario</th><th>Subtotal</th></tr></thead><tbody>
+      ${f.items.map((i) => `<tr><td>${esc(i.descripcion)}</td><td>${i.cantidad}</td>
+        <td>${dinero(i.precioUnitario)}</td><td>${dinero(i.subtotal)}</td></tr>`).join("")}
+      <tr><td colspan="3" class="total">Total</td><td class="total">${dinero(f.total)}</td></tr>
+      </tbody></table>
+      <div style="font-size:13px;color:var(--muted)">Facturado a ${esc(f.email)} · ${esc(f.telefono)} · ${esc(f.direccionEnvio)}</div>`;
+  } catch (e) {
+    return `<h3>Facturación</h3><div class="estado error">No se pudo cargar la factura: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- Productos ---------- */
+function renderProductos(productos) {
+  if (!productos.length) { $("#contenido").innerHTML = '<div class="estado">No hay productos.</div>'; return; }
+  $("#contenido").innerHTML = `
+    <table>
+      <thead><tr><th>Id</th><th>Nombre</th><th>Descripción</th><th>Precio unitario</th><th>Stock</th></tr></thead>
+      <tbody>${productos.map((p, i) => `
+        <tr class="fila" data-i="${i}">
+          <td>${p.id}</td><td>${esc(p.nombre)}</td><td>${esc(p.descripcion)}</td>
+          <td>${dinero(p.precioUnitario)}</td><td>${p.stock}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+  document.querySelectorAll("tr.fila").forEach((tr) =>
+    tr.addEventListener("click", () => {
+      const sig = tr.nextElementSibling;
+      if (sig && sig.classList.contains("detalle")) { sig.remove(); return; }
+      const p = productos[tr.dataset.i];
+      const fila = document.createElement("tr");
+      fila.className = "detalle";
+      const imgs = (p.imagenes || []).map((u) => `
+        <figure><img src="${esc(u)}" alt="${esc(p.nombre)}" onerror="this.style.opacity=.3"><figcaption>${esc(u)}</figcaption></figure>`).join("");
+      fila.innerHTML = `<td colspan="5"><h3>Imágenes de ${esc(p.nombre)}</h3>
+        ${imgs ? `<div class="imgs">${imgs}</div>` : '<div class="estado">Este producto no tiene imágenes.</div>'}</td>`;
+      tr.after(fila);
+    }));
+}
+
+$("#tab-ordenes").addEventListener("click", () => mostrarTab("ordenes"));
+$("#tab-productos").addEventListener("click", () => mostrarTab("productos"));
+$("#refresh").addEventListener("click", cargar);
+cargar();
+</script>
+</body>
+</html>
