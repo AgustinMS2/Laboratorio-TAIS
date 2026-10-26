@@ -1,4 +1,4 @@
-# Laboratorio IISS – Partes 2, 3 y 4
+# Laboratorio IISS – Partes 2, 3, 4 y 5
 
 Aplicación para dar soporte a la operativa de un local de venta de artículos, que
 vende de forma presencial y también recibe pedidos por la Web.
@@ -115,7 +115,7 @@ testeado y desplegado. Su definición está en [`jenkins/Jenkinsfile`](jenkins/J
 | `jenkins/destino/`   | `/destino`        | Aquí se copia la versión, lista para test/deploy  |
 
 Etapas: **Validar origen** (existe y no está vacío) → **Copiar nueva versión** (deja el destino limpio y
-copia todo) → **Verificar copia** (`diff -rq` entre origen y destino) → **Desplegar nueva versión** (`docker compose up -d --build`) → **Ejecutar pruebas** (suite completa `test_apis.sh`).
+copia todo) → **Verificar copia** (`diff -rq` entre origen y destino) → **Desplegar nueva versión** (`docker compose up -d --build`; si el stack corre en Swarm, parte 5, hace un *rolling update* de cada servicio) → **Ejecutar pruebas** (suite completa `test_apis.sh`).
 
 Uso: copiar el código a `jenkins/origen/`, abrir Jenkins, entrar al job y elegir **Construir ahora**.
 El resultado queda en `jenkins/destino/`, los servicios se redespliegan y se corren los tests automáticamente.
@@ -135,7 +135,7 @@ microservicio (el navegador usa un único origen, por eso no hace falta CORS).
 
 - **Pipeline de CI/CD completo.** El pipeline valida el código fuente en origen, limpia y copia hacia
   el destino, verifica la integridad (`diff`), redespliega los servicios mediante Docker Compose
-  (`docker compose up -d --build`) y ejecuta de forma automatizada las 128 pruebas de integración
+  (`docker compose up -d --build`) y ejecuta de forma automatizada las 124 pruebas de integración
   (`test_apis.sh`).
 - **Carpetas como volúmenes.** `jenkins/origen` y `jenkins/destino` están montadas dentro del contenedor
   (`/origen` y `/destino`): el código se deja y se recoge desde el host sin entrar a Jenkins.
@@ -215,6 +215,21 @@ Ejemplo de factura:
 }
 ```
 
+## Parte 5 – Cluster de 3 nodos con Docker Swarm
+
+El servicio `ordenes` (`POST /api/ordenes`) corre en **3 réplicas** de la misma imagen sobre Docker Swarm
+(`deploy.replicas: 3`). El *routing mesh* de Swarm reparte las conexiones entre las réplicas (round-robin),
+por eso **no hizo falta `nginx.conf`**. Cada respuesta incluye el header `X-Instance-Id` y cada request
+queda en el log como `[CLUSTER-ORDENES] [Instancia: <id>]`.
+
+```bash
+bash levantar_cluster.sh     # swarm init + build + stack deploy (espera 3/3).  --down / --status
+bash verificar_cluster.sh    # balanceo con 3 réplicas, baja a 2 y a 1, muestra logs y restaura a 3
+```
+
+Documentación completa, decisiones de diseño y comandos para la defensa: [`README_PARTE5.md`](README_PARTE5.md).
+Para la parte 5 se usa `levantar_cluster.sh` (el `docker-compose.yml` ahora es el de Swarm).
+
 ## Estructura del repositorio
 
 ```
@@ -226,6 +241,9 @@ Ejemplo de factura:
 ├── MER_Laboratorio_TAIS.pdf      # Diagrama MER actualizado (partes 2 y 3)
 ├── levantar.ps1 / levantar.cmd   # Levanta todo lo necesario para probar en Windows (Docker, imágenes, servicios, pruebas)
 ├── levantar.sh                   # Lo mismo para Linux y macOS
+├── levantar_cluster.sh           # Parte 5: levanta el cluster Swarm (3 réplicas de ordenes)
+├── verificar_cluster.sh          # Parte 5: curls, baja de instancias y verificación de logs
+├── README_PARTE5.md              # Parte 5: documentación del cluster
 ├── test_apis.sh                  # Script de pruebas con curl (todas las APIs y el flujo por MQTT)
 ├── README.md
 ├── mosquitto/
