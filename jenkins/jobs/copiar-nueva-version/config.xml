@@ -63,8 +63,19 @@ pipeline {
                         cp -a "$DESTINO"/. "$PWD"/
                     fi
 
-                    # Reconstruye y levanta los servicios de la aplicacion (sin recrear Jenkins)
-                    docker compose up -d --build productos ordenes procesamiento publicador web mosquitto
+                    SERVICIOS_APP="productos ordenes procesamiento publicador web"
+                    if [ "$(docker info --format '{{.Swarm.LocalNodeState}}')" = "active" ] &amp;&amp; \
+                       docker stack ls --format '{{.Name}}' | grep -x laboratorio-tais &gt;/dev/null; then
+                        # Cluster Swarm (parte 5): reconstruye las imagenes y hace un rolling update de cada servicio
+                        echo "Cluster Swarm detectado: rolling update del stack laboratorio-tais"
+                        docker compose build $SERVICIOS_APP
+                        for svc in $SERVICIOS_APP; do
+                            docker service update --force --quiet --image laboratorio-tais-$svc:latest laboratorio-tais_$svc
+                        done
+                    else
+                        # Reconstruye y levanta los servicios de la aplicacion (sin recrear Jenkins)
+                        docker compose up -d --build $SERVICIOS_APP mosquitto
+                    fi
                     echo "Servicios desplegados correctamente."
                 '''
             }

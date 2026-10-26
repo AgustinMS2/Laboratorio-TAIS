@@ -86,7 +86,7 @@ fi
 # 2. Compilar imágenes requeridas
 titulo "2. Construyendo / actualizando imágenes locales de los microservicios"
 info "Compilando imágenes con docker compose build (incluye microservicio ordenes con logging de cluster)..."
-docker compose build ordenes productos publicador procesamiento web
+docker compose build ordenes productos publicador procesamiento web jenkins
 
 ok "Imágenes compiladas y etiquetadas localmente."
 
