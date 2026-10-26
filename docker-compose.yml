@@ -1,4 +1,5 @@
-name: laboratorio-tais
+# version: "3.8"
+# Proyecto: laboratorio-tais
 
 # Levanta toda la aplicacion en contenedores:
 #   - mysql-productos     : base de datos del microservicio de productos
@@ -74,8 +75,12 @@ services:
       - backend
 
   productos:
+    image: laboratorio-tais-productos:latest
     build:
       context: ./productos
+    deploy:
+      restart_policy:
+        condition: on-failure
     environment:
       JAVA_TOOL_OPTIONS: *java-opts
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-productos:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
@@ -86,14 +91,24 @@ services:
     ports:
       - "5001:5001"
     depends_on:
-      mysql-productos:
-        condition: service_healthy
+      - mysql-productos
     networks:
       - backend
 
   ordenes:
+    image: laboratorio-tais-ordenes:latest
     build:
       context: ./ordenes
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+        window: 60s
+      update_config:
+        parallelism: 1
+        delay: 5s
     environment:
       JAVA_TOOL_OPTIONS: *java-opts
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-ordenes:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
@@ -106,16 +121,18 @@ services:
     ports:
       - "5002:5002"
     depends_on:
-      mysql-ordenes:
-        condition: service_healthy
-      productos:
-        condition: service_started
+      - mysql-ordenes
+      - productos
     networks:
       - backend
 
   publicador:
+    image: laboratorio-tais-publicador:latest
     build:
       context: ./publicador
+    deploy:
+      restart_policy:
+        condition: on-failure
     environment:
       JAVA_TOOL_OPTIONS: *java-opts
       # Servicio del que toma las ordenes en estado Created (GET /api/ordenes?estado=Created)
@@ -125,16 +142,18 @@ services:
     ports:
       - "5004:5004"
     depends_on:
-      mosquitto:
-        condition: service_healthy
-      ordenes:
-        condition: service_started
+      - mosquitto
+      - ordenes
     networks:
       - backend
 
   procesamiento:
+    image: laboratorio-tais-procesamiento:latest
     build:
       context: ./procesamiento
+    deploy:
+      restart_policy:
+        condition: on-failure
     environment:
       JAVA_TOOL_OPTIONS: *java-opts
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-procesamiento:3306/mydatabase?allowPublicKeyRetrieval=true&useSSL=false"
@@ -150,20 +169,20 @@ services:
     ports:
       - "5003:5003"
     depends_on:
-      mysql-procesamiento:
-        condition: service_healthy
-      mosquitto:
-        condition: service_healthy
-      productos:
-        condition: service_started
-      ordenes:
-        condition: service_started
+      - mysql-procesamiento
+      - mosquitto
+      - productos
+      - ordenes
     networks:
       - backend
 
   web:
+    image: laboratorio-tais-web:latest
     build:
       context: ./web
+    deploy:
+      restart_policy:
+        condition: on-failure
     ports:
       - "8081:80"
     depends_on:
@@ -175,15 +194,21 @@ services:
 
   # Jenkins: el pipeline "copiar-nueva-version" copia el codigo de ./jenkins/origen a ./jenkins/destino
   jenkins:
+    image: laboratorio-tais-jenkins:latest
     build:
       context: ./jenkins
     user: root
+    environment:
+      - HOST_WORKSPACE=${PWD}
     ports:
       - "8080:8080"
     volumes:
       - jenkins-home:/var/jenkins_home
       - ./jenkins/origen:/origen
       - ./jenkins/destino:/destino
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/workspace
+      - .:${PWD}
     networks:
       - backend
 
@@ -196,4 +221,6 @@ volumes:
 
 networks:
   backend:
-    driver: bridge
+    driver: overlay
+    attachable: true
+

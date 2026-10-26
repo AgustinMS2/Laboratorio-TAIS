@@ -115,10 +115,10 @@ testeado y desplegado. Su definición está en [`jenkins/Jenkinsfile`](jenkins/J
 | `jenkins/destino/`   | `/destino`        | Aquí se copia la versión, lista para test/deploy  |
 
 Etapas: **Validar origen** (existe y no está vacío) → **Copiar nueva versión** (deja el destino limpio y
-copia todo) → **Verificar copia** (`diff -rq` entre origen y destino).
+copia todo) → **Verificar copia** (`diff -rq` entre origen y destino) → **Desplegar nueva versión** (`docker compose up -d --build`) → **Ejecutar pruebas** (suite completa `test_apis.sh`).
 
 Uso: copiar el código a `jenkins/origen/`, abrir Jenkins, entrar al job y elegir **Construir ahora**.
-El resultado queda en `jenkins/destino/`.
+El resultado queda en `jenkins/destino/`, los servicios se redespliegan y se corren los tests automáticamente.
 
 ### Interfaz web — `http://localhost:8081`
 
@@ -133,9 +133,10 @@ microservicio (el navegador usa un único origen, por eso no hace falta CORS).
 
 ### Decisiones de diseño (parte 4)
 
-- **Pipeline que solo copia.** La letra pide copiar la nueva versión a otro folder "donde
-  posteriormente serán testeados y desplegados", así que el pipeline se limita a validar el origen,
-  copiar y verificar la copia. El test y el despliegue son etapas posteriores.
+- **Pipeline de CI/CD completo.** El pipeline valida el código fuente en origen, limpia y copia hacia
+  el destino, verifica la integridad (`diff`), redespliega los servicios mediante Docker Compose
+  (`docker compose up -d --build`) y ejecuta de forma automatizada las 128 pruebas de integración
+  (`test_apis.sh`).
 - **Carpetas como volúmenes.** `jenkins/origen` y `jenkins/destino` están montadas dentro del contenedor
   (`/origen` y `/destino`): el código se deja y se recoge desde el host sin entrar a Jenkins.
 - **Job precargado.** El `Dockerfile` de Jenkins instala el plugin de Pipeline y carga el job al arrancar,

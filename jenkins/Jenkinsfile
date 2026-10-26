@@ -2,15 +2,16 @@
 // desde el folder donde esta el codigo fuente ya descargado (ORIGEN)
 // hacia el folder donde luego sera testeado y desplegado (DESTINO).
 //
-// Dentro del contenedor de Jenkins los folders estan montados en:
-//   /origen  -> ./jenkins/origen  (en el host)
-//   /destino -> ./jenkins/destino (en el host)
+// Posteriormente ejecuta:
+//   - Despliegue de los servicios con la nueva version (docker compose)
+//   - Suite completa de pruebas de integracion (test_apis.sh)
 pipeline {
     agent any
 
     environment {
-        ORIGEN  = '/origen'
-        DESTINO = '/destino'
+        ORIGEN        = '/origen'
+        DESTINO       = '/destino'
+        WORKSPACE_DIR = "${env.HOST_WORKSPACE ?: '/workspace'}"
     }
 
     stages {
@@ -44,10 +45,59 @@ pipeline {
                 '''
             }
         }
+
+        stage('Desplegar nueva version') {
+            steps {
+                sh '''
+                    echo "== Desplegando el sistema con la nueva version =="
+                    cd "$WORKSPACE_DIR" 2>/dev/null || cd /workspace
+
+                    # Si el destino contiene docker-compose o archivos a actualizar, se sincronizan
+                    if [ -f "$DESTINO/docker-compose.yml" ]; then
+                        echo "Aplicando docker-compose desde destino..."
+                        cp -a "$DESTINO"/. "$PWD"/
+                    fi
+
+                    # Reconstruye y levanta los servicios de la aplicacion (sin recrear Jenkins)
+                    docker compose up -d --build productos ordenes procesamiento publicador web mosquitto
+                    echo "Servicios desplegados correctamente."
+                '''
+            }
+        }
+
+        stage('Ejecutar pruebas') {
+            steps {
+                sh '''
+                    echo "== Ejecutando suite de pruebas de integracion (test_apis.sh) =="
+                    cd "$WORKSPACE_DIR" 2>/dev/null || cd /workspace
+
+                    # Esperar activamente a que todos los microservicios esten listos
+                    echo "Esperando que los microservicios esten respondiendo..."
+                    for i in $(seq 1 30); do
+                        if curl -s -f http://productos:5001/api/productos >/dev/null 2>&1 && \
+                           curl -s -f http://ordenes:5002/api/ordenes >/dev/null 2>&1 && \
+                           curl -s -f http://procesamiento:5003/api/facturas >/dev/null 2>&1 && \
+                           curl -s -f http://publicador:5004/api/publicaciones >/dev/null 2>&1; then
+                            echo "✓ Todos los microservicios estan listos."
+                            break
+                        fi
+                        echo "Esperando inicio de servicios ($i/30)..."
+                        sleep 2
+                    done
+
+                    # Ejecutar test_apis.sh apuntando a los microservicios en la red interna
+                    BASE_URL_PRODUCTOS="http://productos:5001" \
+                    BASE_URL_ORDENES="http://ordenes:5002" \
+                    BASE_URL_PROCESAMIENTO="http://procesamiento:5003" \
+                    BASE_URL_PUBLICADOR="http://publicador:5004" \
+                    bash test_apis.sh
+                '''
+            }
+        }
     }
 
     post {
-        success { echo 'Nueva version copiada; lista para ser testeada y desplegada.' }
-        failure { echo 'La copia fallo: revisar el log de la etapa anterior.' }
+        success { echo 'Pipeline completado exitosamente: version copiada, desplegada y todas las pruebas aprobadas.' }
+        failure { echo 'El pipeline fallo: revisar el log de la etapa que presento error.' }
     }
 }
